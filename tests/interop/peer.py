@@ -3,9 +3,9 @@
 file edge (spec/HACP-2.0-draft.md §12.1).
 
 INFORMATION BARRIER (the point of this file): this implementation reads only
-  * hacp/spec/HACP-2.0-draft.md        (normative semantics)
-  * hacp/spec/schemas/*.json           (canonical wire schemas)
-  * hacp/tests/golden/*.jsonl          (worked examples)
+  * spec/HACP-2.0-draft.md        (normative semantics)
+  * spec/schemas/*.json           (canonical wire schemas)
+  * tests/golden/*.jsonl          (worked examples)
 and imports neither HIVE nor the reference Rust crate. It is Python stdlib
 only. If interoperation with the reference peer required reading the reference
 source, that would be a spec defect, and gets reported as one.

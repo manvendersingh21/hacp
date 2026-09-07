@@ -4,7 +4,7 @@ HACP lets independent agents negotiate tasks, agree on contracts, exchange
 artifacts and evidence, verify results, and escalate disputes. It is model-,
 CLI-, language-, and runtime-neutral. **HIVE uses HACP; HACP does not require HIVE.**
 
-This directory is a standalone Rust library plus specifications, JSON schemas,
+This repository contains a standalone Rust library plus specifications, JSON schemas,
 conformance vectors, golden transcripts, and an independent Python test peer.
 It does not launch agents or provide a hosted endpoint. There is no HACP account
 or protocol API key; the model or CLI you choose may require its own account.
@@ -12,8 +12,8 @@ or protocol API key; the model or CLI you choose may require its own account.
 ## Get it and try it
 
 ```sh
-git clone https://github.com/manvendersingh21/HIVE.git
-cd HIVE
+git clone https://github.com/manvendersingh21/hcap.git
+cd hcap
 cargo run -p hacp --example bilateral
 cargo test -p hacp
 ```
@@ -28,16 +28,15 @@ To embed the library in another Rust project:
 
 ```toml
 [dependencies]
-hacp = { git = "https://github.com/manvendersingh21/HIVE.git", package = "hacp" }
+hacp = { git = "https://github.com/manvendersingh21/hcap.git", package = "hacp" }
 serde_json = "1"
 ```
 
-Cargo locates the `hacp` package in the repository and builds its dependencies,
-not Hive's services. Pin `rev` to a reviewed commit for reproducible deployments.
-Only committed and pushed changes are available through this Git dependency.
-For a local checkout, use `hacp = { path = "../HIVE/hacp" }` instead.
-The entire `hacp/` directory can also be copied into a separate source tree;
-its manifest and tests do not require a surrounding Hive workspace.
+The repository is named `hcap`; the protocol acronym and Rust crate are **HACP**
+and **`hacp`**. Cargo builds only this library and its dependencies, not HIVE.
+Pin `rev` to a reviewed full commit ID for reproducible deployments and commit
+your application's `Cargo.lock`. For a sibling local checkout, use
+`hacp = { path = "../hcap" }` instead. No HIVE checkout is required.
 
 The Cargo package version remains **1.1.0**: root modules implement frozen
 [HACP/1.1](spec/HACP.md), while `hacp::v2` implements the separate
@@ -111,16 +110,36 @@ verification record. Never fill these fields from untrusted claims.
 
 ## Validate and package independently
 
-From this directory:
+From the repository root:
 
 ```sh
-cargo test
+cargo build --locked
+cargo test --locked
 cargo run --example bilateral
-cargo package --allow-dirty
+cargo doc --no-deps --locked
+cargo package --locked
 ```
 
 The package includes its Python peer, schemas, and test fixtures. After changing
 v2 types, regenerate schemas with `cargo run --bin emit-schemas`; schema drift
 is a test failure. The frozen 1.1 implementation and its vectors remain separate.
-Packaging is local; publishing a registry release or creating a separate HACP
-repository is a separate maintainer action. Source is licensed Apache-2.0.
+Packaging is local; this is a Git-distributed library, not a claim of publication
+on crates.io. Publishing a registry release is a separate maintainer action.
+
+## Contributing and support
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow, compatibility
+rules, and test requirements. The [testing guide](docs/TESTING-YOUR-PROTOCOL.md)
+explains the evidence behind the protocol. Report reproducible bugs and propose
+changes through [GitHub issues](https://github.com/manvendersingh21/hcap/issues).
+See [SECURITY.md](SECURITY.md) for vulnerability reporting and integration boundaries.
+
+## License and origin
+
+Licensed under [Apache License 2.0](LICENSE).
+
+HACP was extracted from [HIVE](https://github.com/manvendersingh21/HIVE) on
+2026-09-07, preserving the protocol directory's Git history. HIVE is a consumer,
+not a dependency. The specifications, schemas, library, and conformance tests
+are maintained here; runtime-specific deployment and live-agent reports remain
+in HIVE.

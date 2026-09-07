@@ -5,7 +5,7 @@ the **frozen** [`HACP.md`](HACP.md) (1.1), retained with its 43 conformance vect
 The standalone `hacp::v2` library implements protocol objects and state machines;
 transport loops, CLI hosting, authentication, and execution remain binding/runtime work.
 Sections marked *(normative)* govern the implementation and conformance vectors.
-Rationale for the boundary reset: [`docs/adr/ADR-0001`](../../docs/adr/ADR-0001-hacp-core-is-bilateral.md).
+Rationale for the boundary reset: [`docs/adr/ADR-0001`](../docs/adr/ADR-0001-hacp-core-is-bilateral.md).
 
 **The one-sentence protocol:** two agents who do not trust, know, or understand each other's
 internals negotiate a bilateral contract, exchange addressable artifacts under that contract,
@@ -392,7 +392,7 @@ declares them in its profile.
 
 Bindings carry Core messages; they never define semantics. Three normative binding rules apply
 to all of them, each carrying a Phase S measurement
-([`docs/findings/adapter-edge.md`](../../docs/findings/adapter-edge.md)):
+([`docs/findings/adapter-edge.md`](../docs/findings/adapter-edge.md)):
 
 1. **Write rights are a launch-contract concern.** A binding that hosts stock CLIs MUST
    establish workspace write semantics at spawn time (e.g. sandbox mode); nothing post-spawn

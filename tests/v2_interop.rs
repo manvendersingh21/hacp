@@ -1,6 +1,6 @@
 //! The Phase 3 exit test: a full bilateral lifecycle between the **reference**
 //! implementation (`hacp::v2`) and an **independently implemented peer** that
-//! imports neither HIVE nor this crate — `interop/peer-python/peer.py`, built
+//! imports neither HIVE nor this crate — `tests/interop/peer.py`, built
 //! from the normative spec, the committed canonical schemas, and the golden
 //! transcripts alone (ADR-0001 §3, spec §14 "Independence").
 //!

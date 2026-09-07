@@ -1,0 +1,25 @@
+name: Protocol checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      RUSTFLAGS: -D warnings
+      RUSTDOCFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install stable Rust
+        run: rustup toolchain install stable --profile minimal && rustup default stable
+      - name: Check Python
+        run: python3 --version
+      - run: cargo build --locked
+      - run: cargo test --locked --no-run
+      - run: cargo test --locked
+      - run: cargo run --locked --example bilateral
+      - run: cargo doc --locked --no-deps
+      - run: cargo package --locked

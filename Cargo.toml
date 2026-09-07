@@ -4,7 +4,7 @@ version = "1.1.0"
 edition = "2021"
 description = "HACP — Heterogeneous Agent Collaboration Protocol: wire types, validation, and conformance vectors"
 license = "Apache-2.0"
-repository = "https://github.com/manvendersingh21/HIVE"
+repository = "https://github.com/manvendersingh21/hcap"
 readme = "README.md"
 
 # This crate is the protocol, not an implementation of a system that uses it.
