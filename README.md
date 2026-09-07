@@ -16,9 +16,8 @@ example directly, import the Rust library into your own application, or implemen
 the wire protocol in another language. There is no HACP server to log into and
 no HACP API key to obtain.
 
-The repository is named `hcap`; the protocol acronym and Rust crate are **HACP**
-and **`hacp`**. Use the repository spelling in Git URLs and the crate spelling in
-Rust imports.
+The protocol is **HACP** (Heterogeneous Agent Collaboration Protocol). The
+repository, checkout directory, and Rust crate all use **`hacp`**.
 
 ### 1. Try the standalone example
 
@@ -27,8 +26,8 @@ interoperability test included in the full test suite. Neither tmux nor SSH,
 Ollama, a database, an agent CLI, or a model account is required for this example.
 
 ```sh
-git clone https://github.com/manvendersingh21/hcap.git
-cd hcap
+git clone https://github.com/manvendersingh21/hacp.git
+cd hacp
 cargo run --locked --example bilateral
 cargo test --locked
 ```
@@ -59,7 +58,7 @@ Replace the generated `[dependencies]` section in `Cargo.toml` with:
 
 ```toml
 [dependencies]
-hacp = { git = "https://github.com/manvendersingh21/hcap.git", rev = "697eae62e950e862b64984ef8f0b2ee86f2aeb34" }
+hacp = { git = "https://github.com/manvendersingh21/hacp.git", rev = "697eae62e950e862b64984ef8f0b2ee86f2aeb34" }
 serde_json = "1"
 ```
 
@@ -115,7 +114,7 @@ creation, digest/size/content checks, settlement, and session closure.
 The dependency above pins the independently tested extraction commit. Update
 `rev` deliberately when adopting a newer protocol revision and commit your
 application's `Cargo.lock`. Cargo downloads only HACP and its dependencies, not
-HIVE. For a sibling local checkout instead, use `hacp = { path = "../hcap" }`.
+HIVE. For a sibling local checkout instead, use `hacp = { path = "../hacp" }`.
 
 ### 3. Use another language or your own agent runtime
 
@@ -233,7 +232,7 @@ See the [validation record](docs/STANDALONE-VALIDATION.md) for commands and scop
 Read [CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow, compatibility
 rules, and test requirements. The [testing guide](docs/TESTING-YOUR-PROTOCOL.md)
 explains the evidence behind the protocol. Report reproducible bugs and propose
-changes through [GitHub issues](https://github.com/manvendersingh21/hcap/issues).
+changes through [GitHub issues](https://github.com/manvendersingh21/hacp/issues).
 See [SECURITY.md](SECURITY.md) for vulnerability reporting and integration boundaries.
 
 ## License and origin
