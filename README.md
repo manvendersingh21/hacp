@@ -9,34 +9,137 @@ conformance vectors, golden transcripts, and an independent Python test peer.
 It does not launch agents or provide a hosted endpoint. There is no HACP account
 or protocol API key; the model or CLI you choose may require its own account.
 
-## Get it and try it
+## Use HACP without HIVE
+
+You do **not** need to install, clone, or run HIVE. You can run the protocol's
+example directly, import the Rust library into your own application, or implement
+the wire protocol in another language. There is no HACP server to log into and
+no HACP API key to obtain.
+
+The repository is named `hcap`; the protocol acronym and Rust crate are **HACP**
+and **`hacp`**. Use the repository spelling in Git URLs and the crate spelling in
+Rust imports.
+
+### 1. Try the standalone example
+
+Requirements: stable Rust/Cargo. Install Python 3 as well to run the independent
+interoperability test included in the full test suite. Neither tmux nor SSH,
+Ollama, a database, an agent CLI, or a model account is required for this example.
 
 ```sh
 git clone https://github.com/manvendersingh21/hcap.git
 cd hcap
-cargo run -p hacp --example bilateral
-cargo test -p hacp
+cargo run --locked --example bilateral
+cargo test --locked
 ```
 
-Rust/Cargo are required; the interoperability test also requires `python3`.
 The example runs two deterministic in-process peers through agreement, freeze,
 artifact submission, measured verification, settlement, and session closure.
-It uses no Hive services, model credits, or network. It is a library example,
-not a demonstration of two live AI CLIs.
+It prints an opening JSON envelope followed by:
 
-To embed the library in another Rust project:
+```text
+Settled: exact content, size and digest verified; session closed.
+```
+
+The initial clone/build needs network access to download source and dependencies.
+The example itself uses no network, HIVE services, or model credits. After Cargo
+has cached the dependencies, add `--offline` to run it without network access.
+This demonstrates the library lifecycle, not two live AI agents.
+
+### 2. Use the library in your own Rust application
+
+You do not need a checkout of either HACP or HIVE for this option:
+
+```sh
+cargo new --bin hacp-demo
+cd hacp-demo
+```
+
+Replace the generated `[dependencies]` section in `Cargo.toml` with:
 
 ```toml
 [dependencies]
-hacp = { git = "https://github.com/manvendersingh21/hcap.git", package = "hacp" }
+hacp = { git = "https://github.com/manvendersingh21/hcap.git", rev = "697eae62e950e862b64984ef8f0b2ee86f2aeb34" }
 serde_json = "1"
 ```
 
-The repository is named `hcap`; the protocol acronym and Rust crate are **HACP**
-and **`hacp`**. Cargo builds only this library and its dependencies, not HIVE.
-Pin `rev` to a reviewed full commit ID for reproducible deployments and commit
-your application's `Cargo.lock`. For a sibling local checkout, use
-`hacp = { path = "../hcap" }` instead. No HIVE checkout is required.
+Replace `src/main.rs` with this complete program:
+
+```rust
+use hacp::v2::{Contract, ContractLimits, Relationship, Session, Task};
+use serde_json::json;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let requester = "urn:hacp:agent:requester";
+    let worker = "urn:hacp:agent:worker";
+    let mut session = Session::open("s-demo", requester, worker)?;
+    session.accept(worker)?;
+
+    let mut contract = Contract::propose(
+        &session,
+        "c-demo",
+        Task {
+            task_id: "t-demo".into(),
+            summary: "Produce a greeting file".into(),
+            owner: worker.into(),
+        },
+        Relationship::Collaboration,
+        vec![],
+        ContractLimits { max_rounds: 3, max_amendments: 2 },
+    )?;
+    let terms = json!({
+        "outputs": ["greeting.txt"],
+        "acceptance": ["The file contains exactly hello followed by a newline"]
+    });
+    contract.agree(requester, &terms)?;
+    contract.agree(worker, &terms)?;
+    let revision = contract.freeze(terms)?;
+    println!("Frozen revision: {revision}");
+    Ok(())
+}
+```
+
+Run it:
+
+```sh
+cargo run
+```
+
+Expected output: `Frozen revision:` followed by a deterministic SHA-256 revision
+digest. This program records an agreement; it does **not** create `greeting.txt`
+or call a model. Your application supplies the worker and artifact storage, then
+uses `Contract::submit` and `Contract::apply_verification` to record measured
+results. See [the complete bilateral example](examples/bilateral.rs) for artifact
+creation, digest/size/content checks, settlement, and session closure.
+
+The dependency above pins the independently tested extraction commit. Update
+`rev` deliberately when adopting a newer protocol revision and commit your
+application's `Cargo.lock`. Cargo downloads only HACP and its dependencies, not
+HIVE. For a sibling local checkout instead, use `hacp = { path = "../hcap" }`.
+
+### 3. Use another language or your own agent runtime
+
+Rust is one implementation, not a protocol requirement. Use the
+[HACP/2.0 specification](spec/HACP-2.0-draft.md), [JSON schemas](spec/schemas), and
+[golden transcripts](tests/golden) to implement your own peer in Python,
+JavaScript, Go, or another language. The [independent Python peer](tests/interop/peer.py)
+uses only Python's standard library; it is a narrow test implementation, not a
+complete Python SDK or ready-made agent host.
+
+To exercise the reference Rust library against that separate Python process:
+
+```sh
+# From the HACP repository, with Rust and python3 installed:
+cargo test --locked --test v2_interop -- --nocapture
+```
+
+The test creates temporary file-edge directories, launches the Python peer,
+exchanges envelopes, checks the artifact, and compares both transcripts. It
+does not call HIVE or a model provider. To connect actual agents, write the thin
+adapter described below; there is no automatic connection between existing CLI
+sessions just because the library is installed.
+
+## Package and protocol versions
 
 The Cargo package version remains **1.1.0**: root modules implement frozen
 [HACP/1.1](spec/HACP.md), while `hacp::v2` implements the separate
@@ -66,13 +169,6 @@ Codex, OpenCode, Claude, or another tool can participate if an adapter supplies
 that bridge. Installing this library alone does not connect their sessions.
 Supervision, grants, cross-branch permits, and the recursive pairwise profile
 are available separately; the profile is optional, not a Core prerequisite.
-
-For Python, JavaScript, Go, or another language, implement the
-[specification](spec/HACP-2.0-draft.md) against the [schemas](spec/schemas)
-and [golden transcripts](tests/golden). No Rust imports are required.
-[The Python peer](tests/interop/peer.py) demonstrates the bilateral happy path
-using only the standard library. It is a narrow interoperability fixture, not
-a complete SDK, full schema validator, or production adapter.
 
 ## Integration trust boundaries
 
@@ -125,6 +221,12 @@ v2 types, regenerate schemas with `cargo run --bin emit-schemas`; schema drift
 is a test failure. The frozen 1.1 implementation and its vectors remain separate.
 Packaging is local; this is a Git-distributed library, not a claim of publication
 on crates.io. Publishing a registry release is a separate maintainer action.
+
+Standalone validation on 2026-09-07: a fresh public clone passed **146 tests,
+zero failures, zero skips**. The isolated Cargo package passed the same suite.
+The exact Rust example in this README also compiled and ran in a separate
+application with **zero HIVE packages** in its resolved dependency graph.
+See the [validation record](docs/STANDALONE-VALIDATION.md) for commands and scope.
 
 ## Contributing and support
 
