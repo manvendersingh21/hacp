@@ -71,6 +71,71 @@ mod tests {
     }
 
     #[test]
+    fn arbitrary_nested_content_binds_votes_revisions_and_amendments() {
+        use hacp::v2::{canon::digest_of, ContractError, Submission};
+        let original = json!({"policy":{"retry":{"reserve_on_failure":false},
+            "order":["identity","capacity"]}});
+        let mut changed = original.clone();
+        changed["policy"]["retry"]["reserve_on_failure"] = json!(true);
+        assert_ne!(digest_of(&original).unwrap(), digest_of(&changed).unwrap());
+        let mut c = contract(&active()).unwrap();
+        c.agree(A, &original).unwrap();
+        assert_eq!(c.agree(B, &changed), Err(ContractError::TermsMismatch));
+        assert!(c.freeze(original.clone()).is_err());
+        c.agree(B, &original).unwrap();
+        assert_eq!(c.freeze(changed.clone()), Err(ContractError::TermsMismatch));
+        let first = c.freeze(original.clone()).unwrap();
+        assert_eq!(
+            first,
+            digest_of(&json!({
+                "contract_id":c.contract_id,"revision":1,"content":original
+            }))
+            .unwrap()
+        );
+        // Hold identity and revision constant: nested content alone changes the hash.
+        assert_ne!(
+            first,
+            digest_of(&json!({
+                "contract_id":c.contract_id,"revision":1,"content":changed
+            }))
+            .unwrap()
+        );
+        let frozen = c.revisions[0].clone();
+        c = serde_json::from_value(serde_json::to_value(&c).unwrap()).unwrap();
+        assert_eq!(c.revisions[0].content, original);
+        c.propose_amendment(A).unwrap();
+        assert_eq!(
+            c.decide_amendment(A, true, Some(changed.clone())).unwrap(),
+            None
+        );
+        assert_eq!(
+            c.decide_amendment(B, true, Some(original.clone())),
+            Err(ContractError::TermsMismatch)
+        );
+        assert_eq!(c.revisions, vec![frozen.clone()]);
+        let second = c
+            .decide_amendment(B, true, Some(changed.clone()))
+            .unwrap()
+            .unwrap();
+        assert_ne!(first, second);
+        assert_eq!(c.revisions[0], frozen);
+        assert_eq!(c.revisions[1].content, changed);
+        assert_eq!(c.revisions[1].number, 2);
+        assert!(matches!(
+            c.submit(
+                B,
+                Submission {
+                    against_revision: first,
+                    artifacts: vec![],
+                    evidence: vec![],
+                    claim: "done".into()
+                }
+            ),
+            Err(ContractError::StaleRevision { .. })
+        ));
+    }
+
+    #[test]
     fn amendment_requires_agreement_on_the_same_revision() {
         let mut c = executing();
         c.propose_amendment(A).unwrap();

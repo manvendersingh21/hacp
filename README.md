@@ -140,7 +140,7 @@ sessions just because the library is installed.
 
 ## Package and protocol versions
 
-The Cargo package version remains **1.1.0**: root modules implement frozen
+The Cargo package version is **1.1.1**: root modules implement frozen
 [HACP/1.1](spec/HACP.md), while `hacp::v2` implements the separate
 [HACP/2.0 draft](spec/HACP-2.0-draft.md). These wire versions are not compatible.
 Use `hacp::v2` for the bilateral API shown in [the example](examples/bilateral.rs).
@@ -171,6 +171,21 @@ are available separately; the profile is optional, not a Core prerequisite.
 
 ## Integration trust boundaries
 
+- Revision content is free-form canonical JSON. Bind material negotiated behavior
+  in that content before both participants accept it; the host binding defines
+  its terms schema. The revision digest remains SHA-256 over canonical
+  `{contract_id, revision, content}`. Changing any nested content requires fresh
+  agreement, and post-freeze changes use amendments preserving prior revisions.
+- Serialized `agreed_by` and `agreed_terms_digest` describe pending acceptance
+  votes, not historical receipts. They are deliberately cleared after freeze and
+  accepted amendment. `Executing` means a frozen agreement exists. Hosts should
+  persist acceptance/freeze events if they need historical actors and timestamps;
+  the core state machine does not supply a durable event store.
+- `Session::close` is generic termination; a closed session does not certify
+  successful work. Host workflows can guard successful completion using settled
+  contracts, accepted verification records, and binding-specific outstanding work.
+  See [hacp-skill](https://github.com/manvendersingh21/hacp-skill) for the coding
+  binding's `requirements` schema and guarded `complete` operation.
 - Authenticate peers at the transport boundary. A URN is a name, not a signature.
   Validate envelopes and typed bodies, bind `session_id`, `from`, and `to` to the
   local session and authenticated connection, and reject observer-authored state
