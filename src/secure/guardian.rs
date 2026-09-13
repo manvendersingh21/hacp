@@ -265,7 +265,7 @@ impl Guardian {
                 json!({"ok":true,"urn":self.local(),"ed25519_pub_fingerprint":encode_hex(&Sha256::digest(self.manager.public_key()))}),
             ),
             Request::Status => {
-                let mut sessions:Vec<_>=self.manager.sessions().into_iter().map(|s| {let t=self.transport.status(&s.sid);json!({"sid":s.sid,"peer":s.peer,"state":s.state,"send_seq":t.send_seq,"recv_high":t.recv_high,"held":t.held,"mode":self.mode.label()})}).collect();
+                let mut sessions:Vec<_>=self.manager.sessions().into_iter().map(|s| {let t=self.transport.status(&s.sid);json!({"sid":s.sid,"peer":s.peer,"hacp_session":s.hacp_session,"state":s.state,"send_seq":t.send_seq,"recv_high":t.recv_high,"held":t.held,"mode":self.mode.label()})}).collect();
                 for pin in self.pins.values().filter(|p| !p.require_secure) {
                     sessions.push(json!({"sid":"","peer":pin.urn,"state":"insecure","send_seq":0,"recv_high":null,"held":0}));
                 }
@@ -373,42 +373,95 @@ impl Guardian {
             return Ok(ContractView::Pending);
         }
         let mut observed = Vec::new();
+        let mut superseded = Vec::new();
+        let mut bootstrap = false;
         if let Some(contracts) = state.get("contracts").and_then(Value::as_object) {
             for (id, entry) in contracts {
                 let c = entry.get("contract").unwrap_or(entry);
+                let contract_state = c.get("state").and_then(Value::as_str);
+                bootstrap |= matches!(contract_state, Some("proposed" | "countered"));
+                // A decline before the first freeze still emits a bootstrap
+                // negotiation notification. Terminal amendment failure instead
+                // retains its last frozen revision, like successful settlement.
+                if matches!(contract_state, Some("noagreement" | "withdrawn"))
+                    && c.get("revisions")
+                        .and_then(Value::as_array)
+                        .is_some_and(Vec::is_empty)
+                {
+                    bootstrap = true;
+                    continue;
+                }
+                // The core permits withdrawal only before a first freeze.
+                if contract_state == Some("withdrawn") {
+                    return Err(SecureError::ContractMismatch);
+                }
                 if !matches!(
-                    c.get("state").and_then(Value::as_str),
-                    Some("executing" | "verifying" | "amending")
+                    contract_state,
+                    Some(
+                        "executing"
+                            | "verifying"
+                            | "amending"
+                            | "settled"
+                            | "rejected"
+                            | "noagreement"
+                    )
                 ) {
                     continue;
                 }
-                let revision = c
+                let revisions = c
                     .get("revisions")
                     .and_then(Value::as_array)
-                    .and_then(|r| r.last())
+                    .filter(|r| !r.is_empty())
                     .ok_or(SecureError::ContractMismatch)?;
-                observed.push(ContractView::Frozen {
-                    contract_id: id.clone(),
-                    revision: revision
+                let mut previous = 0;
+                for (index, revision) in revisions.iter().enumerate() {
+                    let number = revision
                         .get("number")
                         .and_then(Value::as_u64)
-                        .ok_or(SecureError::ContractMismatch)?,
-                    content: revision
+                        .filter(|n| *n > previous)
+                        .ok_or(SecureError::ContractMismatch)?;
+                    previous = number;
+                    let content = revision
                         .get("content")
                         .cloned()
-                        .ok_or(SecureError::ContractMismatch)?,
-                    digest: revision
+                        .ok_or(SecureError::ContractMismatch)?;
+                    let digest = revision
                         .get("digest")
                         .and_then(Value::as_str)
-                        .ok_or(SecureError::ContractMismatch)?
-                        .into(),
-                });
+                        .ok_or(SecureError::ContractMismatch)?;
+                    let computed = crate::v2::canon::digest_of(
+                        &json!({"contract_id":id,"revision":number,"content":content}),
+                    )
+                    .map_err(|_| SecureError::ContractMismatch)?;
+                    if digest.strip_prefix("sha256:").unwrap_or(digest) != computed {
+                        return Err(SecureError::ContractMismatch);
+                    }
+                    if index + 1 == revisions.len() {
+                        observed.push(ContractView::Frozen {
+                            contract_id: id.clone(),
+                            revision: number,
+                            content,
+                            digest: computed,
+                        });
+                    } else {
+                        superseded.push(format!("sha256:{computed}"));
+                    }
+                }
             }
         }
-        match observed.len() {
-            0 => Ok(ContractView::Bootstrap),
-            1 => Ok(observed.remove(0)),
-            _ => Err(SecureError::ContractMismatch),
+        // Preserve the single-contract policy. A digest-only wire field cannot
+        // distinguish an unknown contract from a conflicting known revision;
+        // absent an explicit pending proposal, fail closed on that ambiguity.
+        if observed.is_empty() && superseded.is_empty() {
+            Ok(ContractView::Bootstrap)
+        } else if observed.len() == 1 && superseded.is_empty() && !bootstrap {
+            Ok(observed.remove(0))
+        } else {
+            Ok(ContractView::Observed {
+                current: observed,
+                superseded,
+                bootstrap,
+            })
         }
     }
     // Resolve every edge directory relative to a pinned directory descriptor. A hostile
@@ -696,6 +749,7 @@ impl Guardian {
                             Ok(v) => v,
                             Err(e) => {
                                 let _ = self.transport.close(&mut self.manager, sid);
+                                aborted.push(json!({"sid":sid,"error":e}));
                                 return Err(e);
                             }
                         };
@@ -1015,7 +1069,7 @@ mod tests {
             .any(|w| w == b"edge canary"));
     }
     #[test]
-    fn actual_hacp_observation_shape_and_ambiguity() {
+    fn actual_hacp_observation_shape_and_corrupt_second_contract() {
         let fixture = Fixture::new();
         let g = fixture.guardian();
         let dir = fixture.project.join(".hacp");
@@ -1033,6 +1087,93 @@ mod tests {
             Ok(ContractView::Frozen { revision: 1, .. })
         ));
         state["contracts"]["c-another"] = entry;
+        fs::write(dir.join("session.json"), state.to_string()).unwrap();
+        assert!(matches!(
+            g.contract_view("s-test"),
+            Err(SecureError::ContractMismatch)
+        ));
+    }
+    #[test]
+    fn concurrent_contracts_settlement_and_pending_proposals_are_observed() {
+        let fixture = Fixture::new();
+        let g = fixture.guardian();
+        let dir = fixture.project.join(".hacp");
+        fs::create_dir(&dir).unwrap();
+        let revision = |id: &str, n: u64| {
+            let content = json!({"inputs":[],"outputs":[id],"acceptance":["true"]});
+            let digest = crate::v2::canon::digest_of(
+                &json!({"contract_id":id,"revision":n,"content":content}),
+            )
+            .unwrap();
+            json!({"number":n,"content":content,"digest":digest})
+        };
+        let old = revision("c-one", 1);
+        let mut state = json!({"session":{"session_id":"s-test"},"contracts":{
+            "c-one":{"contract":{"state":"executing","revisions":[old,revision("c-one",2)]}},
+            "c-two":{"contract":{"state":"settled","revisions":[revision("c-two",1)]}},
+            "c-next":{"contract":{"state":"proposed","revisions":[]}}
+        }});
+        fs::write(dir.join("session.json"), state.to_string()).unwrap();
+        let ContractView::Observed {
+            current,
+            superseded,
+            bootstrap,
+        } = g.contract_view("s-test").unwrap()
+        else {
+            panic!("multiple contracts require a complete observation")
+        };
+        assert_eq!(current.len(), 2);
+        assert_eq!(
+            superseded,
+            vec![format!("sha256:{}", old["digest"].as_str().unwrap())]
+        );
+        assert!(bootstrap);
+        state["contracts"]["c-next"]["contract"]["state"] = json!("noagreement");
+        state["contracts"]["c-two"]["contract"]["state"] = json!("noagreement");
+        fs::write(dir.join("session.json"), state.to_string()).unwrap();
+        let ContractView::Observed {
+            current, bootstrap, ..
+        } = g.contract_view("s-test").unwrap()
+        else {
+            panic!("terminal notifications retain their contract context")
+        };
+        assert_eq!(
+            current.len(),
+            2,
+            "terminal frozen history remains attributable"
+        );
+        assert!(bootstrap, "never-frozen decline remains bootstrap traffic");
+        state["contracts"]["c-two"]["contract"]["state"] = json!("rejected");
+        state["contracts"]["c-next"]["contract"]["state"] = json!("withdrawn");
+        fs::write(dir.join("session.json"), state.to_string()).unwrap();
+        let ContractView::Observed {
+            current, bootstrap, ..
+        } = g.contract_view("s-test").unwrap()
+        else {
+            panic!("withdrawal and rejected verification preserve notification bindings")
+        };
+        assert_eq!(
+            current.len(),
+            2,
+            "verification rejection retains its frozen revision"
+        );
+        assert!(bootstrap);
+        state["contracts"]["c-next"]["contract"]["revisions"] = json!([revision("c-next", 1)]);
+        fs::write(dir.join("session.json"), state.to_string()).unwrap();
+        assert!(matches!(
+            g.contract_view("s-test"),
+            Err(SecureError::ContractMismatch)
+        ));
+        state["contracts"].as_object_mut().unwrap().remove("c-next");
+        fs::write(dir.join("session.json"), state.to_string()).unwrap();
+        assert!(matches!(
+            g.contract_view("s-test"),
+            Ok(ContractView::Observed {
+                bootstrap: false,
+                ..
+            })
+        ));
+        state["contracts"]["c-one"]["contract"]["revisions"][0]["content"] = json!({"forged":true});
         fs::write(dir.join("session.json"), state.to_string()).unwrap();
         assert!(matches!(
             g.contract_view("s-test"),

@@ -1,5 +1,6 @@
 //! HACP Secure: public wire/client surface, with key custody compiled only for guardians.
 pub mod client;
+pub mod workflow;
 #[cfg(feature = "guardian")]
 mod crypto;
 pub mod envelope;

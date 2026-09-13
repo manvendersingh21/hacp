@@ -1,0 +1,6 @@
+{
+  "repository": "https://github.com/manvendersingh21/hacp-skill.git",
+  "commit": "0d0c6a33a1da8a6f3d864702c6ba4c2b6a348fb3",
+  "patch": "secure.patch",
+  "dependency": "local HACP checkout, default features only"
+}

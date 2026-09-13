@@ -14,6 +14,15 @@ use std::collections::{BTreeMap, HashMap};
 pub enum ContractView {
     Bootstrap,
     Pending,
+    /// The snapshot may contain several independent contracts. Current entries
+    /// are Frozen views, including a settled contract's last frozen revision.
+    /// Bootstrap remains possible for a negotiation that has never frozen,
+    /// including its final no-agreement notification.
+    Observed {
+        current: Vec<ContractView>,
+        superseded: Vec<String>,
+        bootstrap: bool,
+    },
     Frozen {
         contract_id: String,
         revision: u64,
@@ -24,6 +33,36 @@ pub enum ContractView {
 impl ContractView {
     fn check(&self, claimed: &str) -> Result<(), SecureError> {
         match self {
+            Self::Observed {
+                current,
+                superseded,
+                bootstrap,
+            } => {
+                let mut matched = false;
+                for entry in current {
+                    let Self::Frozen { digest, .. } = entry else {
+                        return Err(SecureError::ContractMismatch);
+                    };
+                    let binding = format!(
+                        "sha256:{}",
+                        digest.strip_prefix("sha256:").unwrap_or(digest)
+                    );
+                    // Validate every observation, including records unrelated to
+                    // this claim; malformed control state never authorizes data.
+                    entry.check(&binding)?;
+                    matched |= binding == claimed;
+                }
+                if superseded.iter().any(|digest| digest == claimed) {
+                    return Err(SecureError::ContractMismatch);
+                }
+                if matched || (claimed.is_empty() && (*bootstrap || current.is_empty())) {
+                    Ok(())
+                } else if !claimed.is_empty() && (*bootstrap || current.is_empty()) {
+                    Err(SecureError::ContractPending)
+                } else {
+                    Err(SecureError::ContractMismatch)
+                }
+            }
             Self::Bootstrap | Self::Pending => {
                 if claimed.is_empty() {
                     Ok(())
