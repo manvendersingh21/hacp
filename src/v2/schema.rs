@@ -152,6 +152,9 @@ mod tests {
             .filter(|e| e.file_type().map(|t| t.is_file()).unwrap_or(false))
             .map(|e| e.file_name().to_string_lossy().into_owned())
             .filter(|n| n.ends_with(".json"))
+            // SecureEnvelope is a separately authored, frozen security-layer schema.
+            // Its conformance is tested by secure_envelope, not emitted by schemars.
+            .filter(|n| n != "secure-envelope.json")
             .collect();
         committed.sort();
         let mut registered: Vec<String> =
