@@ -20,3 +20,24 @@ uuid = { version = "1", features = ["v4", "serde"] }
 schemars = { version = "0.8", features = ["chrono"] }
 sha2 = "0.10"
 thiserror = "2"
+
+base64 = "0.22"
+x25519-dalek = { version = "2", features = ["static_secrets", "zeroize"], optional = true }
+ed25519-dalek = { version = "2", features = ["rand_core", "zeroize"], optional = true }
+chacha20poly1305 = { version = "0.10", optional = true }
+hkdf = { version = "0.12", optional = true }
+zeroize = { version = "1", features = ["derive"], optional = true }
+rand_core = { version = "0.6", features = ["getrandom"], optional = true }
+libc = { version = "0.2", optional = true }
+
+[features]
+default = []
+guardian = ["dep:x25519-dalek", "dep:ed25519-dalek", "dep:chacha20poly1305", "dep:hkdf", "dep:zeroize", "dep:rand_core", "dep:libc"]
+
+[[bin]]
+name = "hacp-secure-guardian"
+path = "src/bin/hacp-secure-guardian.rs"
+required-features = ["guardian"]
+
+[dev-dependencies]
+static_assertions = "1"

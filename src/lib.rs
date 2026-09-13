@@ -47,3 +47,5 @@ pub use envelope::{kinds, urn, Envelope, EnvelopeError, MessageKind, PROTOCOL, P
 pub use report::{CheckResult, CompletionReport, Outcome, ReportSource, VerificationResult};
 pub use state::{RunLimits, RunState};
 pub use topology::{CapabilityManifest, TaskDecomposition, Topology};
+
+pub mod secure;
