@@ -1,0 +1,21 @@
+[package]
+name = "hacp-wasmer-sandbox"
+version = "0.1.0"
+edition = "2021"
+publish = false
+license = "Apache-2.0"
+description = "Wasmer sandbox executor for HACP and its key-free HACP Secure execution bridge (not part of the hacp crate)"
+
+# The executor drives the Wasmer CLI through std::process, so no Wasmer SDK or
+# compiler toolchain is pulled in. See README.md ("Why the CLI and not the
+# embedded SDK").
+#
+# The execution bridge (src/execution.rs) links `hacp` WITHOUT the `guardian`
+# feature: only the key-free guardian client and envelope types. Enabling
+# `guardian` here would compile key custody into the sandbox host process; see
+# docs/hacp-wasmer-integration.md.
+[dependencies]
+hacp = { path = "../..", default-features = false }
+base64 = "0.22"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
