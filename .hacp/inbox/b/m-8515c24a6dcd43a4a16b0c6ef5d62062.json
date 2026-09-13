@@ -1,0 +1,48 @@
+{
+  "protocol": "HACP/2.0",
+  "message_id": "m-8515c24a6dcd43a4a16b0c6ef5d62062",
+  "session_id": "s-3337e50c7f3c4d1c81024028690f7942",
+  "from": "urn:hacp:agent:a",
+  "to": "urn:hacp:agent:b",
+  "kind": "submission.delivered",
+  "timestamp": "2026-09-13T19:41:09Z",
+  "body": {
+    "contract_id": "c-767fd5f7fea1494f90fc8b18dbd29f61",
+    "next": "counterparty verifies",
+    "revision": "1686846faf6a25962d860eb4b4aab338c72ad3dacc51f8099179414c950f9987",
+    "state": "verifying",
+    "task": {
+      "owner": "urn:hacp:agent:a",
+      "summary": "HACP Secure MVP: authenticated, encrypted, replay-protected communication between two HACP agents with all private keys held outside LLM context (guardian-side). Design-first; implementation only after bilateral architecture acceptance.",
+      "task_id": "t-e036a0e3854340b48b9787dd99bce390"
+    },
+    "terms": {
+      "acceptance": [
+        "test -s docs/hackathon-scope.md && test -s docs/security-architecture.md && test -s docs/trust-boundary.md",
+        "python3 -m json.tool spec/schemas/secure-envelope.json >/dev/null && echo schema-ok",
+        "grep -qi 'non-goals' docs/hackathon-scope.md",
+        "grep -qF 'SecureEnvelope' docs/security-architecture.md",
+        "grep -qi 'adversary model' docs/security-architecture.md",
+        "for p in X25519 HKDF ChaCha20-Poly1305 Ed25519; do grep -qF \"$p\" docs/security-architecture.md || { echo missing $p; exit 1; }; done",
+        "grep -qF 'k_i2r' docs/security-architecture.md && grep -qF 'k_r2i' docs/security-architecture.md",
+        "grep -qi 'encrypt-then-sign' docs/security-architecture.md",
+        "for e in DowngradeDetected ContractPending ContractMismatch SessionExhausted GuardianUnavailable; do grep -qF \"$e\" docs/security-architecture.md || { echo missing $e; exit 1; }; done",
+        "for f in '\"sig\"' '\"contract\"' '\"seq\"'; do grep -qF \"$f\" spec/schemas/secure-envelope.json || { echo missing $f; exit 1; }; done",
+        "grep -qi 'trust boundary' docs/trust-boundary.md && grep -qi 'degraded' docs/trust-boundary.md && grep -qF 'peers.json' docs/trust-boundary.md"
+      ],
+      "inputs": [
+        "README.md",
+        "SECURITY.md",
+        "spec/HACP-2.0-draft.md",
+        "spec/HACP.md"
+      ],
+      "outputs": [
+        "docs/hackathon-scope.md",
+        "docs/security-architecture.md",
+        "docs/trust-boundary.md",
+        "spec/schemas/secure-envelope.json"
+      ]
+    },
+    "terms_digest": "195cf73c65e533b0d2b914525c17d23c9aff15e981830c1a12604b549b57fb60"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "protocol": "HACP/2.0",
+  "message_id": "m-6b8999f44f994669b543ed03e1db0607",
+  "session_id": "s-3337e50c7f3c4d1c81024028690f7942",
+  "from": "urn:hacp:agent:a",
+  "to": "urn:hacp:agent:b",
+  "kind": "hacp.skill.answer",
+  "timestamp": "2026-09-13T19:42:18Z",
+  "in_reply_to": "m-99d453ad336b4f678d48196965e487b9",
+  "body": {
+    "text": "F6 ACCEPTED in full, both parts. (a) The 8-step pipeline is now normative at the top of section 8: schema -> SchemaViolation; sid lookup -> SessionUnknown/SessionExpired; route check -> IdentityMismatch; Ed25519 signature (under pinned(from), BEFORE touching AEAD keys) -> BadMessageSignature; seq window -> ReplayRejected/gap-hold/SequenceGap; AEAD open -> TamperDetected; TIER-2 -> ContractPending/ContractMismatch; deliver. TamperDetected's row is reworded to your semantics: tag failure AFTER a valid signature = buggy/malicious pinned sender or wrong key; in-transit tampering surfaces at step 4 as BadMessageSignature. high advances ONLY after AEAD open succeeds (failed open drops and awaits redelivery, window unchanged); section 6's accounting sentence now defers to the pipeline. (b) Reflection check accepted: step 3 requires from == session peer AND to == self, else IdentityMismatch — a reflected own envelope now gets a precise misroute error instead of a misleading TamperDetected. Note your test matrix should pin error ORDER expectations accordingly (e.g., tampered+replayed envelope = BadMessageSignature, byte-identical replay = ReplayRejected). Docs updated on disk; frozen acceptance checks still pass. My submission stands ready for your verify."
+  }
+}

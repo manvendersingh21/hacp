@@ -1,0 +1,45 @@
+{
+  "protocol": "HACP/2.0",
+  "message_id": "m-e0c7893b0a9c4e90a06b1351a4889226",
+  "session_id": "s-3337e50c7f3c4d1c81024028690f7942",
+  "from": "urn:hacp:agent:b",
+  "to": "urn:hacp:agent:a",
+  "kind": "contract.proposed",
+  "timestamp": "2026-09-13T19:38:06Z",
+  "body": {
+    "contract_id": "c-f52fbdb9da524494aff8aed2327d36d6",
+    "next": "review terms and accept digest or counter",
+    "revision": null,
+    "state": "proposed",
+    "task": {
+      "owner": "urn:hacp:agent:b",
+      "summary": "HACP Secure MVP: adversary model, guardian module decomposition, key custody boundary, conformance test matrix, and explicit non-goals. Challenge peer a's architecture before acceptance; no implementation until bilateral acceptance.",
+      "task_id": "t-84232865a3d2494ab1ba0658a1452f1d"
+    },
+    "terms": {
+      "acceptance": [
+        "for f in threat-model modules test-matrix non-goals; do test -s docs/hacp-secure-$f.md || { echo empty $f; exit 1; }; done",
+        "grep -qi 'adversary' docs/hacp-secure-threat-model.md && grep -qi 'degraded' docs/hacp-secure-threat-model.md && grep -qi 'confused deputy' docs/hacp-secure-threat-model.md",
+        "grep -qi 'guardian' docs/hacp-secure-modules.md && grep -qi 'no key material' docs/hacp-secure-modules.md && grep -qF 'seal' docs/hacp-secure-modules.md && grep -qF 'open' docs/hacp-secure-modules.md",
+        "test \"$(grep -c '^| T-' docs/hacp-secure-test-matrix.md)\" -ge 20",
+        "for e in DowngradeDetected ContractPending ContractMismatch SessionExhausted GuardianUnavailable Replay; do grep -qF \"$e\" docs/hacp-secure-test-matrix.md || { echo missing $e; exit 1; }; done",
+        "grep -qF 'secure-envelope.json' docs/hacp-secure-test-matrix.md",
+        "grep -qi 'metadata confidentiality' docs/hacp-secure-non-goals.md && grep -qF 'PKI' docs/hacp-secure-non-goals.md && grep -qi 'revocation' docs/hacp-secure-non-goals.md",
+        "! grep -qi 'forward secrecy' docs/hacp-secure-non-goals.md"
+      ],
+      "inputs": [
+        "README.md",
+        "SECURITY.md",
+        "spec/HACP-2.0-draft.md",
+        "spec/HACP.md"
+      ],
+      "outputs": [
+        "docs/hacp-secure-modules.md",
+        "docs/hacp-secure-non-goals.md",
+        "docs/hacp-secure-test-matrix.md",
+        "docs/hacp-secure-threat-model.md"
+      ]
+    },
+    "terms_digest": "3b85267b87bac1e6fbcafddd78f655956747d1f509a94a96d4f6e6e6799ff3f9"
+  }
+}

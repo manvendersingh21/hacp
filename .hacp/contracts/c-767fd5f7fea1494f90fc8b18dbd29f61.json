@@ -1,0 +1,690 @@
+{
+  "artifacts": [
+    {
+      "path": "docs/hackathon-scope.md",
+      "record": {
+        "artifact_id": "urn:hacp:artifact:025e327d-aeee-4890-a709-f9630f1a57bc",
+        "contract_id": "c-767fd5f7fea1494f90fc8b18dbd29f61",
+        "contract_revision": "1686846faf6a25962d860eb4b4aab338c72ad3dacc51f8099179414c950f9987",
+        "derived_from": [],
+        "digest": "ebe858b8c44bec0c002315ed795ba954c0b8b76ed0b9d065637e2b23b1e25ec6",
+        "location": ".hacp/artifacts/025e327d-aeee-4890-a709-f9630f1a57bc.bin",
+        "media_type": "application/octet-stream",
+        "producer": "urn:hacp:agent:a",
+        "size": 6700,
+        "task_id": "t-e036a0e3854340b48b9787dd99bce390",
+        "visibility": "participants"
+      }
+    },
+    {
+      "path": "docs/security-architecture.md",
+      "record": {
+        "artifact_id": "urn:hacp:artifact:3d064aa7-3104-48fe-b001-376ec5721192",
+        "contract_id": "c-767fd5f7fea1494f90fc8b18dbd29f61",
+        "contract_revision": "1686846faf6a25962d860eb4b4aab338c72ad3dacc51f8099179414c950f9987",
+        "derived_from": [],
+        "digest": "daf4c485d05c958811d91d85ee35e1dc8b7ba2130c0a7681623a6111d4026460",
+        "location": ".hacp/artifacts/3d064aa7-3104-48fe-b001-376ec5721192.bin",
+        "media_type": "application/octet-stream",
+        "producer": "urn:hacp:agent:a",
+        "size": 19100,
+        "task_id": "t-e036a0e3854340b48b9787dd99bce390",
+        "visibility": "participants"
+      }
+    },
+    {
+      "path": "docs/trust-boundary.md",
+      "record": {
+        "artifact_id": "urn:hacp:artifact:2e1d3438-6fec-4c04-b48e-db639e1dbc94",
+        "contract_id": "c-767fd5f7fea1494f90fc8b18dbd29f61",
+        "contract_revision": "1686846faf6a25962d860eb4b4aab338c72ad3dacc51f8099179414c950f9987",
+        "derived_from": [],
+        "digest": "a9dac76198edc81bd116ea09a43b3c98a812274edf9b29fc7822a33bf9b2bb74",
+        "location": ".hacp/artifacts/2e1d3438-6fec-4c04-b48e-db639e1dbc94.bin",
+        "media_type": "application/octet-stream",
+        "producer": "urn:hacp:agent:a",
+        "size": 7496,
+        "task_id": "t-e036a0e3854340b48b9787dd99bce390",
+        "visibility": "participants"
+      }
+    },
+    {
+      "path": "spec/schemas/secure-envelope.json",
+      "record": {
+        "artifact_id": "urn:hacp:artifact:b4994928-7a8d-4c47-9cb5-dfe47f9423e6",
+        "contract_id": "c-767fd5f7fea1494f90fc8b18dbd29f61",
+        "contract_revision": "1686846faf6a25962d860eb4b4aab338c72ad3dacc51f8099179414c950f9987",
+        "derived_from": [],
+        "digest": "b5240f6a335b652af463e00d3b1e1e4bc28568e2cbeba5a417d4f806a3338ef8",
+        "location": ".hacp/artifacts/b4994928-7a8d-4c47-9cb5-dfe47f9423e6.bin",
+        "media_type": "application/octet-stream",
+        "producer": "urn:hacp:agent:a",
+        "size": 4172,
+        "task_id": "t-e036a0e3854340b48b9787dd99bce390",
+        "visibility": "participants"
+      }
+    },
+    {
+      "path": "docs/hackathon-scope.md",
+      "record": {
+        "artifact_id": "urn:hacp:artifact:78360d23-acc4-4a19-ac7d-649b29259151",
+        "contract_id": "c-767fd5f7fea1494f90fc8b18dbd29f61",
+        "contract_revision": "1686846faf6a25962d860eb4b4aab338c72ad3dacc51f8099179414c950f9987",
+        "derived_from": [],
+        "digest": "a353a70737bf97b5057b31c7c7c624e8d327e9a1208205fe778bf8e7a9a5a797",
+        "location": ".hacp/artifacts/78360d23-acc4-4a19-ac7d-649b29259151.bin",
+        "media_type": "application/octet-stream",
+        "producer": "urn:hacp:agent:a",
+        "size": 7154,
+        "task_id": "t-e036a0e3854340b48b9787dd99bce390",
+        "visibility": "participants"
+      }
+    },
+    {
+      "path": "docs/security-architecture.md",
+      "record": {
+        "artifact_id": "urn:hacp:artifact:ea104d24-98cd-46c4-a545-e5ef91ac6bf9",
+        "contract_id": "c-767fd5f7fea1494f90fc8b18dbd29f61",
+        "contract_revision": "1686846faf6a25962d860eb4b4aab338c72ad3dacc51f8099179414c950f9987",
+        "derived_from": [],
+        "digest": "787f1241200f23c5df14db82b8b2b9750e1247ca331293cc15ea368dc3e6ace0",
+        "location": ".hacp/artifacts/ea104d24-98cd-46c4-a545-e5ef91ac6bf9.bin",
+        "media_type": "application/octet-stream",
+        "producer": "urn:hacp:agent:a",
+        "size": 21581,
+        "task_id": "t-e036a0e3854340b48b9787dd99bce390",
+        "visibility": "participants"
+      }
+    },
+    {
+      "path": "docs/trust-boundary.md",
+      "record": {
+        "artifact_id": "urn:hacp:artifact:78d2b30e-a013-4160-8048-e65cfb8f73df",
+        "contract_id": "c-767fd5f7fea1494f90fc8b18dbd29f61",
+        "contract_revision": "1686846faf6a25962d860eb4b4aab338c72ad3dacc51f8099179414c950f9987",
+        "derived_from": [],
+        "digest": "b3d02fee92ad125301ab7c7244d6f859999bc679fd49d35b7bacf547116ea6e2",
+        "location": ".hacp/artifacts/78d2b30e-a013-4160-8048-e65cfb8f73df.bin",
+        "media_type": "application/octet-stream",
+        "producer": "urn:hacp:agent:a",
+        "size": 7502,
+        "task_id": "t-e036a0e3854340b48b9787dd99bce390",
+        "visibility": "participants"
+      }
+    },
+    {
+      "path": "spec/schemas/secure-envelope.json",
+      "record": {
+        "artifact_id": "urn:hacp:artifact:76cf449b-6f2d-4c5f-9842-93bdc9659427",
+        "contract_id": "c-767fd5f7fea1494f90fc8b18dbd29f61",
+        "contract_revision": "1686846faf6a25962d860eb4b4aab338c72ad3dacc51f8099179414c950f9987",
+        "derived_from": [],
+        "digest": "e5f5fab70dfffa732350bee3e6b69c9d013d1b9ec1cac9a9d7058f2432faba4f",
+        "location": ".hacp/artifacts/76cf449b-6f2d-4c5f-9842-93bdc9659427.bin",
+        "media_type": "application/octet-stream",
+        "producer": "urn:hacp:agent:a",
+        "size": 4474,
+        "task_id": "t-e036a0e3854340b48b9787dd99bce390",
+        "visibility": "participants"
+      }
+    },
+    {
+      "path": "docs/hackathon-scope.md",
+      "record": {
+        "artifact_id": "urn:hacp:artifact:f10ddced-1694-47bf-a17b-fcf2ca62898b",
+        "contract_id": "c-767fd5f7fea1494f90fc8b18dbd29f61",
+        "contract_revision": "1686846faf6a25962d860eb4b4aab338c72ad3dacc51f8099179414c950f9987",
+        "derived_from": [],
+        "digest": "a353a70737bf97b5057b31c7c7c624e8d327e9a1208205fe778bf8e7a9a5a797",
+        "location": ".hacp/artifacts/f10ddced-1694-47bf-a17b-fcf2ca62898b.bin",
+        "media_type": "application/octet-stream",
+        "producer": "urn:hacp:agent:a",
+        "size": 7154,
+        "task_id": "t-e036a0e3854340b48b9787dd99bce390",
+        "visibility": "participants"
+      }
+    },
+    {
+      "path": "docs/security-architecture.md",
+      "record": {
+        "artifact_id": "urn:hacp:artifact:59b15b5d-3662-4f9b-b34b-a0376b0dedca",
+        "contract_id": "c-767fd5f7fea1494f90fc8b18dbd29f61",
+        "contract_revision": "1686846faf6a25962d860eb4b4aab338c72ad3dacc51f8099179414c950f9987",
+        "derived_from": [],
+        "digest": "787f1241200f23c5df14db82b8b2b9750e1247ca331293cc15ea368dc3e6ace0",
+        "location": ".hacp/artifacts/59b15b5d-3662-4f9b-b34b-a0376b0dedca.bin",
+        "media_type": "application/octet-stream",
+        "producer": "urn:hacp:agent:a",
+        "size": 21581,
+        "task_id": "t-e036a0e3854340b48b9787dd99bce390",
+        "visibility": "participants"
+      }
+    },
+    {
+      "path": "docs/trust-boundary.md",
+      "record": {
+        "artifact_id": "urn:hacp:artifact:f7cd7415-1d63-4d32-9d13-cdf5cac0131d",
+        "contract_id": "c-767fd5f7fea1494f90fc8b18dbd29f61",
+        "contract_revision": "1686846faf6a25962d860eb4b4aab338c72ad3dacc51f8099179414c950f9987",
+        "derived_from": [],
+        "digest": "3da58155cd49d13a2062761c8e8b6a3bf1525a487b5ce8fe9bacb66c43feffa0",
+        "location": ".hacp/artifacts/f7cd7415-1d63-4d32-9d13-cdf5cac0131d.bin",
+        "media_type": "application/octet-stream",
+        "producer": "urn:hacp:agent:a",
+        "size": 7718,
+        "task_id": "t-e036a0e3854340b48b9787dd99bce390",
+        "visibility": "participants"
+      }
+    },
+    {
+      "path": "spec/schemas/secure-envelope.json",
+      "record": {
+        "artifact_id": "urn:hacp:artifact:fc78baf9-1f5a-411b-bcca-d76c1510f3a3",
+        "contract_id": "c-767fd5f7fea1494f90fc8b18dbd29f61",
+        "contract_revision": "1686846faf6a25962d860eb4b4aab338c72ad3dacc51f8099179414c950f9987",
+        "derived_from": [],
+        "digest": "e5f5fab70dfffa732350bee3e6b69c9d013d1b9ec1cac9a9d7058f2432faba4f",
+        "location": ".hacp/artifacts/fc78baf9-1f5a-411b-bcca-d76c1510f3a3.bin",
+        "media_type": "application/octet-stream",
+        "producer": "urn:hacp:agent:a",
+        "size": 4474,
+        "task_id": "t-e036a0e3854340b48b9787dd99bce390",
+        "visibility": "participants"
+      }
+    }
+  ],
+  "attempts": [
+    {
+      "commands": [],
+      "id": "v-0659477729ed423fa9e25ce7dee35675",
+      "peer": "b",
+      "status": "completed"
+    },
+    {
+      "commands": [],
+      "id": "v-e97f1792c5254503bedc399d3688ae44",
+      "peer": "b",
+      "status": "completed"
+    },
+    {
+      "commands": [
+        {
+          "command": "test -s docs/hackathon-scope.md && test -s docs/security-architecture.md && test -s docs/trust-boundary.md",
+          "duration_ms": 26,
+          "exit_code": 0,
+          "signal": null,
+          "stderr": "",
+          "stdout": "",
+          "timed_out": false
+        },
+        {
+          "command": "python3 -m json.tool spec/schemas/secure-envelope.json >/dev/null && echo schema-ok",
+          "duration_ms": 110,
+          "exit_code": 0,
+          "signal": null,
+          "stderr": "",
+          "stdout": "schema-ok\n",
+          "timed_out": false
+        },
+        {
+          "command": "grep -qi 'non-goals' docs/hackathon-scope.md",
+          "duration_ms": 27,
+          "exit_code": 0,
+          "signal": null,
+          "stderr": "",
+          "stdout": "",
+          "timed_out": false
+        },
+        {
+          "command": "grep -qF 'SecureEnvelope' docs/security-architecture.md",
+          "duration_ms": 28,
+          "exit_code": 0,
+          "signal": null,
+          "stderr": "",
+          "stdout": "",
+          "timed_out": false
+        },
+        {
+          "command": "grep -qi 'adversary model' docs/security-architecture.md",
+          "duration_ms": 23,
+          "exit_code": 0,
+          "signal": null,
+          "stderr": "",
+          "stdout": "",
+          "timed_out": false
+        },
+        {
+          "command": "for p in X25519 HKDF ChaCha20-Poly1305 Ed25519; do grep -qF \"$p\" docs/security-architecture.md || { echo missing $p; exit 1; }; done",
+          "duration_ms": 43,
+          "exit_code": 0,
+          "signal": null,
+          "stderr": "",
+          "stdout": "",
+          "timed_out": false
+        },
+        {
+          "command": "grep -qF 'k_i2r' docs/security-architecture.md && grep -qF 'k_r2i' docs/security-architecture.md",
+          "duration_ms": 28,
+          "exit_code": 0,
+          "signal": null,
+          "stderr": "",
+          "stdout": "",
+          "timed_out": false
+        },
+        {
+          "command": "grep -qi 'encrypt-then-sign' docs/security-architecture.md",
+          "duration_ms": 27,
+          "exit_code": 0,
+          "signal": null,
+          "stderr": "",
+          "stdout": "",
+          "timed_out": false
+        },
+        {
+          "command": "for e in DowngradeDetected ContractPending ContractMismatch SessionExhausted GuardianUnavailable; do grep -qF \"$e\" docs/security-architecture.md || { echo missing $e; exit 1; }; done",
+          "duration_ms": 52,
+          "exit_code": 0,
+          "signal": null,
+          "stderr": "",
+          "stdout": "",
+          "timed_out": false
+        },
+        {
+          "command": "for f in '\"sig\"' '\"contract\"' '\"seq\"'; do grep -qF \"$f\" spec/schemas/secure-envelope.json || { echo missing $f; exit 1; }; done",
+          "duration_ms": 28,
+          "exit_code": 0,
+          "signal": null,
+          "stderr": "",
+          "stdout": "",
+          "timed_out": false
+        },
+        {
+          "command": "grep -qi 'trust boundary' docs/trust-boundary.md && grep -qi 'degraded' docs/trust-boundary.md && grep -qF 'peers.json' docs/trust-boundary.md",
+          "duration_ms": 45,
+          "exit_code": 0,
+          "signal": null,
+          "stderr": "",
+          "stdout": "",
+          "timed_out": false
+        }
+      ],
+      "id": "v-189b3993f0744903b9379e9939e84e5a",
+      "peer": "b",
+      "status": "completed"
+    }
+  ],
+  "contract": {
+    "agreed_by": [],
+    "agreed_terms_digest": null,
+    "amendments": 0,
+    "contract_id": "c-767fd5f7fea1494f90fc8b18dbd29f61",
+    "escalation_path": [],
+    "limits": {
+      "max_amendments": 3,
+      "max_rounds": 3
+    },
+    "participants": [
+      "urn:hacp:agent:a",
+      "urn:hacp:agent:b"
+    ],
+    "pending_submission": null,
+    "pending_submitter": null,
+    "relationship": "collaboration",
+    "revisions": [
+      {
+        "content": {
+          "acceptance": [
+            "test -s docs/hackathon-scope.md && test -s docs/security-architecture.md && test -s docs/trust-boundary.md",
+            "python3 -m json.tool spec/schemas/secure-envelope.json >/dev/null && echo schema-ok",
+            "grep -qi 'non-goals' docs/hackathon-scope.md",
+            "grep -qF 'SecureEnvelope' docs/security-architecture.md",
+            "grep -qi 'adversary model' docs/security-architecture.md",
+            "for p in X25519 HKDF ChaCha20-Poly1305 Ed25519; do grep -qF \"$p\" docs/security-architecture.md || { echo missing $p; exit 1; }; done",
+            "grep -qF 'k_i2r' docs/security-architecture.md && grep -qF 'k_r2i' docs/security-architecture.md",
+            "grep -qi 'encrypt-then-sign' docs/security-architecture.md",
+            "for e in DowngradeDetected ContractPending ContractMismatch SessionExhausted GuardianUnavailable; do grep -qF \"$e\" docs/security-architecture.md || { echo missing $e; exit 1; }; done",
+            "for f in '\"sig\"' '\"contract\"' '\"seq\"'; do grep -qF \"$f\" spec/schemas/secure-envelope.json || { echo missing $f; exit 1; }; done",
+            "grep -qi 'trust boundary' docs/trust-boundary.md && grep -qi 'degraded' docs/trust-boundary.md && grep -qF 'peers.json' docs/trust-boundary.md"
+          ],
+          "inputs": [
+            "README.md",
+            "SECURITY.md",
+            "spec/HACP-2.0-draft.md",
+            "spec/HACP.md"
+          ],
+          "outputs": [
+            "docs/hackathon-scope.md",
+            "docs/security-architecture.md",
+            "docs/trust-boundary.md",
+            "spec/schemas/secure-envelope.json"
+          ]
+        },
+        "digest": "1686846faf6a25962d860eb4b4aab338c72ad3dacc51f8099179414c950f9987",
+        "number": 1
+      }
+    ],
+    "rework_scope": null,
+    "rounds": 1,
+    "state": "settled",
+    "task": {
+      "owner": "urn:hacp:agent:a",
+      "summary": "HACP Secure MVP: authenticated, encrypted, replay-protected communication between two HACP agents with all private keys held outside LLM context (guardian-side). Design-first; implementation only after bilateral architecture acceptance.",
+      "task_id": "t-e036a0e3854340b48b9787dd99bce390"
+    }
+  },
+  "pending_digest": "195cf73c65e533b0d2b914525c17d23c9aff15e981830c1a12604b549b57fb60",
+  "pending_terms": {
+    "acceptance": [
+      "test -s docs/hackathon-scope.md && test -s docs/security-architecture.md && test -s docs/trust-boundary.md",
+      "python3 -m json.tool spec/schemas/secure-envelope.json >/dev/null && echo schema-ok",
+      "grep -qi 'non-goals' docs/hackathon-scope.md",
+      "grep -qF 'SecureEnvelope' docs/security-architecture.md",
+      "grep -qi 'adversary model' docs/security-architecture.md",
+      "for p in X25519 HKDF ChaCha20-Poly1305 Ed25519; do grep -qF \"$p\" docs/security-architecture.md || { echo missing $p; exit 1; }; done",
+      "grep -qF 'k_i2r' docs/security-architecture.md && grep -qF 'k_r2i' docs/security-architecture.md",
+      "grep -qi 'encrypt-then-sign' docs/security-architecture.md",
+      "for e in DowngradeDetected ContractPending ContractMismatch SessionExhausted GuardianUnavailable; do grep -qF \"$e\" docs/security-architecture.md || { echo missing $e; exit 1; }; done",
+      "for f in '\"sig\"' '\"contract\"' '\"seq\"'; do grep -qF \"$f\" spec/schemas/secure-envelope.json || { echo missing $f; exit 1; }; done",
+      "grep -qi 'trust boundary' docs/trust-boundary.md && grep -qi 'degraded' docs/trust-boundary.md && grep -qF 'peers.json' docs/trust-boundary.md"
+    ],
+    "inputs": [
+      "README.md",
+      "SECURITY.md",
+      "spec/HACP-2.0-draft.md",
+      "spec/HACP.md"
+    ],
+    "outputs": [
+      "docs/hackathon-scope.md",
+      "docs/security-architecture.md",
+      "docs/trust-boundary.md",
+      "spec/schemas/secure-envelope.json"
+    ]
+  },
+  "proposer": "b",
+  "submissions": [
+    {
+      "against_revision": "1686846faf6a25962d860eb4b4aab338c72ad3dacc51f8099179414c950f9987",
+      "artifacts": [
+        "urn:hacp:artifact:025e327d-aeee-4890-a709-f9630f1a57bc",
+        "urn:hacp:artifact:3d064aa7-3104-48fe-b001-376ec5721192",
+        "urn:hacp:artifact:2e1d3438-6fec-4c04-b48e-db639e1dbc94",
+        "urn:hacp:artifact:b4994928-7a8d-4c47-9cb5-dfe47f9423e6"
+      ],
+      "claim": "Design package complete: docs/hackathon-scope.md (scope, requirements R1-R8 incl. F1 policy pinning, non-goals, acceptance gate), docs/security-architecture.md (adversary model w/ named standard+degraded mechanisms, pinned identity model, signed-ephemeral handshake with labeled directional keys k_i2r/k_r2i, encrypt-then-sign with F2 domain separation, two-tier contract binding with bounded HOLD, F3 memory-only replay state with three-way seq rule incl. F5 SequenceGap loud abort, strict wire policy, failure taxonomy, module plan), docs/trust-boundary.md (ASCII+mermaid diagram, boundary rules), spec/schemas/secure-envelope.json (exact wire schema). Incorporates challenges 1-5 and F1-F5; all frozen acceptance checks pass locally.",
+      "evidence": []
+    },
+    {
+      "against_revision": "1686846faf6a25962d860eb4b4aab338c72ad3dacc51f8099179414c950f9987",
+      "artifacts": [
+        "urn:hacp:artifact:78360d23-acc4-4a19-ac7d-649b29259151",
+        "urn:hacp:artifact:ea104d24-98cd-46c4-a545-e5ef91ac6bf9",
+        "urn:hacp:artifact:78d2b30e-a013-4160-8048-e65cfb8f73df",
+        "urn:hacp:artifact:76cf449b-6f2d-4c5f-9842-93bdc9659427"
+      ],
+      "claim": "Resubmission after rework verdict (artifact changed on all four outputs): the earlier submission snapshotted pre-F5/F6/F7 content, and I subsequently applied accepted challenge fixes to the on-disk files. This submission snapshots the final v3 docs including: F5 gap-hold + SequenceGap loud abort (never silent wedge), F6 normative 8-step verification pipeline with route/reflection check and high-advances-only-after-AEAD, F7 honest TIER-2 trust-source statement + guardian digest recomputation + control-plane authenticity non-goal, hello/ack contract=='' schema constraint, pending-session bound (4/peer), src/secure/client.rs module, mermaid/scope filename fixes. All frozen acceptance checks pass locally against these exact files.",
+      "evidence": []
+    },
+    {
+      "against_revision": "1686846faf6a25962d860eb4b4aab338c72ad3dacc51f8099179414c950f9987",
+      "artifacts": [
+        "urn:hacp:artifact:f10ddced-1694-47bf-a17b-fcf2ca62898b",
+        "urn:hacp:artifact:59b15b5d-3662-4f9b-b34b-a0376b0dedca",
+        "urn:hacp:artifact:f7cd7415-1d63-4d32-9d13-cdf5cac0131d",
+        "urn:hacp:artifact:fc78baf9-1f5a-411b-bcca-d76c1510f3a3"
+      ],
+      "claim": "Resubmission with the 'trust boundary' phrase added to the opening of docs/trust-boundary.md (b's brittle-grep heads-up accepted; grep -cin now counts it). All other content identical to prior resubmission: F1-F7 fully incorporated. All frozen acceptance checks pass locally against these exact files.",
+      "evidence": []
+    }
+  ],
+  "verifications": [
+    {
+      "against_revision": "1686846faf6a25962d860eb4b4aab338c72ad3dacc51f8099179414c950f9987",
+      "artifacts": [
+        "urn:hacp:artifact:025e327d-aeee-4890-a709-f9630f1a57bc",
+        "urn:hacp:artifact:3d064aa7-3104-48fe-b001-376ec5721192",
+        "urn:hacp:artifact:2e1d3438-6fec-4c04-b48e-db639e1dbc94",
+        "urn:hacp:artifact:b4994928-7a8d-4c47-9cb5-dfe47f9423e6"
+      ],
+      "attests": [],
+      "checks": [
+        {
+          "detail": "artifact changed: docs/hackathon-scope.md",
+          "name": "before: docs/hackathon-scope.md",
+          "passed": false
+        },
+        {
+          "detail": "artifact changed: docs/security-architecture.md",
+          "name": "before: docs/security-architecture.md",
+          "passed": false
+        },
+        {
+          "detail": "artifact changed: docs/trust-boundary.md",
+          "name": "before: docs/trust-boundary.md",
+          "passed": false
+        },
+        {
+          "detail": "artifact changed: spec/schemas/secure-envelope.json",
+          "name": "before: spec/schemas/secure-envelope.json",
+          "passed": false
+        },
+        {
+          "detail": "artifact changed: docs/hackathon-scope.md",
+          "name": "after: docs/hackathon-scope.md",
+          "passed": false
+        },
+        {
+          "detail": "artifact changed: docs/security-architecture.md",
+          "name": "after: docs/security-architecture.md",
+          "passed": false
+        },
+        {
+          "detail": "artifact changed: docs/trust-boundary.md",
+          "name": "after: docs/trust-boundary.md",
+          "passed": false
+        },
+        {
+          "detail": "artifact changed: spec/schemas/secure-envelope.json",
+          "name": "after: spec/schemas/secure-envelope.json",
+          "passed": false
+        }
+      ],
+      "contract_id": "c-767fd5f7fea1494f90fc8b18dbd29f61",
+      "evidence": [],
+      "reasons": [
+        "before: docs/hackathon-scope.md: artifact changed: docs/hackathon-scope.md",
+        "before: docs/security-architecture.md: artifact changed: docs/security-architecture.md",
+        "before: docs/trust-boundary.md: artifact changed: docs/trust-boundary.md",
+        "before: spec/schemas/secure-envelope.json: artifact changed: spec/schemas/secure-envelope.json",
+        "after: docs/hackathon-scope.md: artifact changed: docs/hackathon-scope.md",
+        "after: docs/security-architecture.md: artifact changed: docs/security-architecture.md",
+        "after: docs/trust-boundary.md: artifact changed: docs/trust-boundary.md",
+        "after: spec/schemas/secure-envelope.json: artifact changed: spec/schemas/secure-envelope.json"
+      ],
+      "verdict": {
+        "rework": {
+          "scope": "before: docs/hackathon-scope.md: artifact changed: docs/hackathon-scope.md; before: docs/security-architecture.md: artifact changed: docs/security-architecture.md; before: docs/trust-boundary.md: artifact changed: docs/trust-boundary.md; before: spec/schemas/secure-envelope.json: artifact changed: spec/schemas/secure-envelope.json; after: docs/hackathon-scope.md: artifact changed: docs/hackathon-scope.md; after: docs/security-architecture.md: artifact changed: docs/security-architecture.md; after: docs/trust-boundary.md: artifact changed: docs/trust-boundary.md; after: spec/schemas/secure-envelope.json: artifact changed: spec/schemas/secure-envelope.json"
+        }
+      },
+      "verification_id": "v-0659477729ed423fa9e25ce7dee35675",
+      "verifier": "urn:hacp:agent:b"
+    },
+    {
+      "against_revision": "1686846faf6a25962d860eb4b4aab338c72ad3dacc51f8099179414c950f9987",
+      "artifacts": [
+        "urn:hacp:artifact:78360d23-acc4-4a19-ac7d-649b29259151",
+        "urn:hacp:artifact:ea104d24-98cd-46c4-a545-e5ef91ac6bf9",
+        "urn:hacp:artifact:78d2b30e-a013-4160-8048-e65cfb8f73df",
+        "urn:hacp:artifact:76cf449b-6f2d-4c5f-9842-93bdc9659427"
+      ],
+      "attests": [],
+      "checks": [
+        {
+          "detail": "SHA-256 a353a70737bf97b5057b31c7c7c624e8d327e9a1208205fe778bf8e7a9a5a797 and 7154 bytes match working file and immutable copy",
+          "name": "before: docs/hackathon-scope.md",
+          "passed": true
+        },
+        {
+          "detail": "SHA-256 787f1241200f23c5df14db82b8b2b9750e1247ca331293cc15ea368dc3e6ace0 and 21581 bytes match working file and immutable copy",
+          "name": "before: docs/security-architecture.md",
+          "passed": true
+        },
+        {
+          "detail": "artifact changed: docs/trust-boundary.md",
+          "name": "before: docs/trust-boundary.md",
+          "passed": false
+        },
+        {
+          "detail": "SHA-256 e5f5fab70dfffa732350bee3e6b69c9d013d1b9ec1cac9a9d7058f2432faba4f and 4474 bytes match working file and immutable copy",
+          "name": "before: spec/schemas/secure-envelope.json",
+          "passed": true
+        },
+        {
+          "detail": "SHA-256 a353a70737bf97b5057b31c7c7c624e8d327e9a1208205fe778bf8e7a9a5a797 and 7154 bytes match working file and immutable copy",
+          "name": "after: docs/hackathon-scope.md",
+          "passed": true
+        },
+        {
+          "detail": "SHA-256 787f1241200f23c5df14db82b8b2b9750e1247ca331293cc15ea368dc3e6ace0 and 21581 bytes match working file and immutable copy",
+          "name": "after: docs/security-architecture.md",
+          "passed": true
+        },
+        {
+          "detail": "artifact changed: docs/trust-boundary.md",
+          "name": "after: docs/trust-boundary.md",
+          "passed": false
+        },
+        {
+          "detail": "SHA-256 e5f5fab70dfffa732350bee3e6b69c9d013d1b9ec1cac9a9d7058f2432faba4f and 4474 bytes match working file and immutable copy",
+          "name": "after: spec/schemas/secure-envelope.json",
+          "passed": true
+        }
+      ],
+      "contract_id": "c-767fd5f7fea1494f90fc8b18dbd29f61",
+      "evidence": [],
+      "reasons": [
+        "before: docs/trust-boundary.md: artifact changed: docs/trust-boundary.md",
+        "after: docs/trust-boundary.md: artifact changed: docs/trust-boundary.md"
+      ],
+      "verdict": {
+        "rework": {
+          "scope": "before: docs/trust-boundary.md: artifact changed: docs/trust-boundary.md; after: docs/trust-boundary.md: artifact changed: docs/trust-boundary.md"
+        }
+      },
+      "verification_id": "v-e97f1792c5254503bedc399d3688ae44",
+      "verifier": "urn:hacp:agent:b"
+    },
+    {
+      "against_revision": "1686846faf6a25962d860eb4b4aab338c72ad3dacc51f8099179414c950f9987",
+      "artifacts": [
+        "urn:hacp:artifact:f10ddced-1694-47bf-a17b-fcf2ca62898b",
+        "urn:hacp:artifact:59b15b5d-3662-4f9b-b34b-a0376b0dedca",
+        "urn:hacp:artifact:f7cd7415-1d63-4d32-9d13-cdf5cac0131d",
+        "urn:hacp:artifact:fc78baf9-1f5a-411b-bcca-d76c1510f3a3"
+      ],
+      "attests": [],
+      "checks": [
+        {
+          "detail": "SHA-256 a353a70737bf97b5057b31c7c7c624e8d327e9a1208205fe778bf8e7a9a5a797 and 7154 bytes match working file and immutable copy",
+          "name": "before: docs/hackathon-scope.md",
+          "passed": true
+        },
+        {
+          "detail": "SHA-256 787f1241200f23c5df14db82b8b2b9750e1247ca331293cc15ea368dc3e6ace0 and 21581 bytes match working file and immutable copy",
+          "name": "before: docs/security-architecture.md",
+          "passed": true
+        },
+        {
+          "detail": "SHA-256 3da58155cd49d13a2062761c8e8b6a3bf1525a487b5ce8fe9bacb66c43feffa0 and 7718 bytes match working file and immutable copy",
+          "name": "before: docs/trust-boundary.md",
+          "passed": true
+        },
+        {
+          "detail": "SHA-256 e5f5fab70dfffa732350bee3e6b69c9d013d1b9ec1cac9a9d7058f2432faba4f and 4474 bytes match working file and immutable copy",
+          "name": "before: spec/schemas/secure-envelope.json",
+          "passed": true
+        },
+        {
+          "detail": "{\"command\":\"test -s docs/hackathon-scope.md && test -s docs/security-architecture.md && test -s docs/trust-boundary.md\",\"stdout\":\"\",\"stderr\":\"\",\"duration_ms\":26,\"exit_code\":0,\"signal\":null,\"timed_out\":false}",
+          "name": "test -s docs/hackathon-scope.md && test -s docs/security-architecture.md && test -s docs/trust-boundary.md",
+          "passed": true
+        },
+        {
+          "detail": "{\"command\":\"python3 -m json.tool spec/schemas/secure-envelope.json >/dev/null && echo schema-ok\",\"stdout\":\"schema-ok\\n\",\"stderr\":\"\",\"duration_ms\":110,\"exit_code\":0,\"signal\":null,\"timed_out\":false}",
+          "name": "python3 -m json.tool spec/schemas/secure-envelope.json >/dev/null && echo schema-ok",
+          "passed": true
+        },
+        {
+          "detail": "{\"command\":\"grep -qi 'non-goals' docs/hackathon-scope.md\",\"stdout\":\"\",\"stderr\":\"\",\"duration_ms\":27,\"exit_code\":0,\"signal\":null,\"timed_out\":false}",
+          "name": "grep -qi 'non-goals' docs/hackathon-scope.md",
+          "passed": true
+        },
+        {
+          "detail": "{\"command\":\"grep -qF 'SecureEnvelope' docs/security-architecture.md\",\"stdout\":\"\",\"stderr\":\"\",\"duration_ms\":28,\"exit_code\":0,\"signal\":null,\"timed_out\":false}",
+          "name": "grep -qF 'SecureEnvelope' docs/security-architecture.md",
+          "passed": true
+        },
+        {
+          "detail": "{\"command\":\"grep -qi 'adversary model' docs/security-architecture.md\",\"stdout\":\"\",\"stderr\":\"\",\"duration_ms\":23,\"exit_code\":0,\"signal\":null,\"timed_out\":false}",
+          "name": "grep -qi 'adversary model' docs/security-architecture.md",
+          "passed": true
+        },
+        {
+          "detail": "{\"command\":\"for p in X25519 HKDF ChaCha20-Poly1305 Ed25519; do grep -qF \\\"$p\\\" docs/security-architecture.md || { echo missing $p; exit 1; }; done\",\"stdout\":\"\",\"stderr\":\"\",\"duration_ms\":43,\"exit_code\":0,\"signal\":null,\"timed_out\":false}",
+          "name": "for p in X25519 HKDF ChaCha20-Poly1305 Ed25519; do grep -qF \"$p\" docs/security-architecture.md || { echo missing $p; exit 1; }; done",
+          "passed": true
+        },
+        {
+          "detail": "{\"command\":\"grep -qF 'k_i2r' docs/security-architecture.md && grep -qF 'k_r2i' docs/security-architecture.md\",\"stdout\":\"\",\"stderr\":\"\",\"duration_ms\":28,\"exit_code\":0,\"signal\":null,\"timed_out\":false}",
+          "name": "grep -qF 'k_i2r' docs/security-architecture.md && grep -qF 'k_r2i' docs/security-architecture.md",
+          "passed": true
+        },
+        {
+          "detail": "{\"command\":\"grep -qi 'encrypt-then-sign' docs/security-architecture.md\",\"stdout\":\"\",\"stderr\":\"\",\"duration_ms\":27,\"exit_code\":0,\"signal\":null,\"timed_out\":false}",
+          "name": "grep -qi 'encrypt-then-sign' docs/security-architecture.md",
+          "passed": true
+        },
+        {
+          "detail": "{\"command\":\"for e in DowngradeDetected ContractPending ContractMismatch SessionExhausted GuardianUnavailable; do grep -qF \\\"$e\\\" docs/security-architecture.md || { echo missing $e; exit 1; }; done\",\"stdout\":\"\",\"stderr\":\"\",\"duration_ms\":52,\"exit_code\":0,\"signal\":null,\"timed_out\":false}",
+          "name": "for e in DowngradeDetected ContractPending ContractMismatch SessionExhausted GuardianUnavailable; do grep -qF \"$e\" docs/security-architecture.md || { echo missing $e; exit 1; }; done",
+          "passed": true
+        },
+        {
+          "detail": "{\"command\":\"for f in '\\\"sig\\\"' '\\\"contract\\\"' '\\\"seq\\\"'; do grep -qF \\\"$f\\\" spec/schemas/secure-envelope.json || { echo missing $f; exit 1; }; done\",\"stdout\":\"\",\"stderr\":\"\",\"duration_ms\":28,\"exit_code\":0,\"signal\":null,\"timed_out\":false}",
+          "name": "for f in '\"sig\"' '\"contract\"' '\"seq\"'; do grep -qF \"$f\" spec/schemas/secure-envelope.json || { echo missing $f; exit 1; }; done",
+          "passed": true
+        },
+        {
+          "detail": "{\"command\":\"grep -qi 'trust boundary' docs/trust-boundary.md && grep -qi 'degraded' docs/trust-boundary.md && grep -qF 'peers.json' docs/trust-boundary.md\",\"stdout\":\"\",\"stderr\":\"\",\"duration_ms\":45,\"exit_code\":0,\"signal\":null,\"timed_out\":false}",
+          "name": "grep -qi 'trust boundary' docs/trust-boundary.md && grep -qi 'degraded' docs/trust-boundary.md && grep -qF 'peers.json' docs/trust-boundary.md",
+          "passed": true
+        },
+        {
+          "detail": "SHA-256 a353a70737bf97b5057b31c7c7c624e8d327e9a1208205fe778bf8e7a9a5a797 and 7154 bytes match working file and immutable copy",
+          "name": "after: docs/hackathon-scope.md",
+          "passed": true
+        },
+        {
+          "detail": "SHA-256 787f1241200f23c5df14db82b8b2b9750e1247ca331293cc15ea368dc3e6ace0 and 21581 bytes match working file and immutable copy",
+          "name": "after: docs/security-architecture.md",
+          "passed": true
+        },
+        {
+          "detail": "SHA-256 3da58155cd49d13a2062761c8e8b6a3bf1525a487b5ce8fe9bacb66c43feffa0 and 7718 bytes match working file and immutable copy",
+          "name": "after: docs/trust-boundary.md",
+          "passed": true
+        },
+        {
+          "detail": "SHA-256 e5f5fab70dfffa732350bee3e6b69c9d013d1b9ec1cac9a9d7058f2432faba4f and 4474 bytes match working file and immutable copy",
+          "name": "after: spec/schemas/secure-envelope.json",
+          "passed": true
+        }
+      ],
+      "contract_id": "c-767fd5f7fea1494f90fc8b18dbd29f61",
+      "evidence": [],
+      "reasons": [],
+      "verdict": "accept",
+      "verification_id": "v-189b3993f0744903b9379e9939e84e5a",
+      "verifier": "urn:hacp:agent:b"
+    }
+  ]
+}

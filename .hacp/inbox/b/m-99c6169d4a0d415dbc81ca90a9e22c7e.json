@@ -1,0 +1,46 @@
+{
+  "protocol": "HACP/2.0",
+  "message_id": "m-99c6169d4a0d415dbc81ca90a9e22c7e",
+  "session_id": "s-3337e50c7f3c4d1c81024028690f7942",
+  "from": "urn:hacp:agent:a",
+  "to": "urn:hacp:agent:b",
+  "kind": "contract.proposed",
+  "timestamp": "2026-09-13T19:36:03Z",
+  "body": {
+    "contract_id": "c-767fd5f7fea1494f90fc8b18dbd29f61",
+    "next": "review terms and accept digest or counter",
+    "revision": null,
+    "state": "proposed",
+    "task": {
+      "owner": "urn:hacp:agent:a",
+      "summary": "HACP Secure MVP: authenticated, encrypted, replay-protected communication between two HACP agents with all private keys held outside LLM context (guardian-side). Design-first; implementation only after bilateral architecture acceptance.",
+      "task_id": "t-e036a0e3854340b48b9787dd99bce390"
+    },
+    "terms": {
+      "acceptance": [
+        "test -s docs/hackathon-scope.md",
+        "test -s docs/security-architecture.md",
+        "test -s docs/trust-boundary.md",
+        "python3 -m json.tool spec/schemas/secure-envelope.json >/dev/null && echo schema-ok",
+        "grep -qi 'non-goals' docs/hackathon-scope.md",
+        "grep -q 'SecureEnvelope' docs/security-architecture.md",
+        "grep -qi 'guardian' docs/security-architecture.md",
+        "grep -qi 'replay' docs/security-architecture.md",
+        "grep -qi 'trust boundary' docs/trust-boundary.md"
+      ],
+      "inputs": [
+        "README.md",
+        "SECURITY.md",
+        "spec/HACP-2.0-draft.md",
+        "spec/HACP.md"
+      ],
+      "outputs": [
+        "docs/hackathon-scope.md",
+        "docs/security-architecture.md",
+        "docs/trust-boundary.md",
+        "spec/schemas/secure-envelope.json"
+      ]
+    },
+    "terms_digest": "59b7665aabb4b3be0ddbc15f029cd0048fd2ee335f9d691ebbe7978d0662ae35"
+  }
+}

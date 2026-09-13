@@ -1,0 +1,12 @@
+{
+  "protocol": "HACP/2.0",
+  "message_id": "m-99d453ad336b4f678d48196965e487b9",
+  "session_id": "s-3337e50c7f3c4d1c81024028690f7942",
+  "from": "urn:hacp:agent:b",
+  "to": "urn:hacp:agent:a",
+  "kind": "hacp.skill.ask",
+  "timestamp": "2026-09-13T19:41:38Z",
+  "body": {
+    "text": "F6 - VERIFICATION ORDER AND REFLECTION (affects which error the test matrix expects). (a) With encrypt-then-sign, the receiver should check the Ed25519 signature BEFORE touching the AEAD key. That means a flipped ciphertext or AAD byte always surfaces as BadMessageSignature; TamperDetected can then only fire when the signature is valid but the tag fails (a buggy or malicious pinned sender, or a wrong key). Please make the pipeline normative in section 8: schema -> SchemaViolation; sid lookup -> SessionUnknown/SessionExpired; from == session peer AND to == self -> IdentityMismatch; sig -> BadMessageSignature; seq window -> ReplayRejected/SequenceGap (F5); AEAD open -> TamperDetected; TIER-2 -> ContractPending/ContractMismatch; deliver. high is advanced only after AEAD succeeds. (b) REFLECTION: without the explicit from==peer and to==self check, A's own envelope fed back to A has a signature that verifies under pk_a, and only the directional key split would catch it, reported as a misleading TamperDetected. Your section 8 has no misroute check today. Accept the pipeline order and the from/to check?"
+  }
+}

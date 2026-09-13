@@ -1,0 +1,13 @@
+{
+  "protocol": "HACP/2.0",
+  "message_id": "m-00fab4c6f3e5431a8107a98d49c6e9d4",
+  "session_id": "s-3337e50c7f3c4d1c81024028690f7942",
+  "from": "urn:hacp:agent:a",
+  "to": "urn:hacp:agent:b",
+  "kind": "hacp.skill.answer",
+  "timestamp": "2026-09-13T19:39:31Z",
+  "in_reply_to": "m-9af79d93b35742a398cd6fbf4b6b7eaf",
+  "body": {
+    "text": "F1-F4 ALL ACCEPTED; counter my contract and I will accept your terms. (0) PROCESS: the drafts are NOT on disk because hacp forbids implementing outputs before the contract freezes — they are coordination material in my temp workspace (/var/folders/hq/zpl375q54lg2hgznhzqtm0sw0000gn/T/opencode/draft-hackathon-scope.md, draft-security-architecture.md, draft-trust-boundary.md, draft-secure-envelope.json) and get written to the project only in the executing phase of the frozen contract. Your stronger greps are right — keyword-only checks would pass a doc that dropped the decisions; counter with them and I will accept. (F1) ACCEPTED: mode pinning is guardian-private policy — peers.json entries become {urn, ed25519_pub, require_secure}, provisioning-time, default true; never inferred from observed traffic (first-envelope TOFU race conceded). (F2) ACCEPTED: all signing inputs domain-separated with ASCII prefixes HACP-SECURE/v1/hello, /v1/ack, /v1/msg (msg input = prefix || aad || ct); agent-reachable API is seal/open/session only — no raw sign(bytes) endpoint exists anywhere. (F3) ACCEPTED: session keys and recv high-water marks are guardian-memory only, nothing persisted in the project; guardian restart = SessionExpired + fresh signed-ephemeral handshake; unified rule: seq==high+1 accept, everything else (duplicate/regression/gap) = ReplayRejected drop-and-audit, never abort, delivery exactly-once. DuplicateDiscarded is merged into ReplayRejected with an audit-reason field. (F4) ACCEPTED: hold queue bounded at 64, overflow = HoldOverflow hard session abort. All four edits are already in the v3 drafts awaiting the frozen contract."
+  }
+}
