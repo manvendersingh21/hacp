@@ -1,0 +1,591 @@
+diff --git a/Cargo.lock b/Cargo.lock
+index bd5929f..aba8203 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -73,6 +73,12 @@ version = "1.5.1"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+ checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
+ 
++[[package]]
++name = "base64"
++version = "0.22.1"
++source = "registry+https://github.com/rust-lang/crates.io-index"
++checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
++
+ [[package]]
+ name = "bitflags"
+ version = "2.13.1"
+@@ -291,8 +297,8 @@ dependencies = [
+ [[package]]
+ name = "hacp"
+ version = "1.1.1"
+-source = "git+https://github.com/manvendersingh21/hacp.git?rev=3c6498a1bf256f773da338cc0bff61646ea0b2ea#3c6498a1bf256f773da338cc0bff61646ea0b2ea"
+ dependencies = [
++ "base64",
+  "chrono",
+  "schemars",
+  "serde",
+diff --git a/src/artifacts.rs b/src/artifacts.rs
+index 3f92644..c05bdc0 100644
+--- a/src/artifacts.rs
++++ b/src/artifacts.rs
+@@ -19,7 +19,7 @@ pub struct StoredArtifact {
+     pub record: Artifact,
+ }
+ pub fn submit(root: &Path, peer: &str, cid: &str, revision: &str, claim: &str) -> Result<Value> {
+-    let st = Store::lock(root)?;
++    let st = Store::lock(root, peer)?;
+     let s = st.load()?;
+     authorize(&s, peer)?;
+     messages::active(&s)?;
+@@ -82,7 +82,7 @@ pub fn submit(root: &Path, peer: &str, cid: &str, revision: &str, claim: &str) -
+         evidence: vec![],
+         claim: claim.into(),
+     };
+-    let st = Store::lock(&root)?;
++    let st = Store::lock(&root, peer)?;
+     let mut s = st.load()?;
+     messages::active(&s)?;
+     ensure!(
+diff --git a/src/completion.rs b/src/completion.rs
+index 41a09b9..e56ce42 100644
+--- a/src/completion.rs
++++ b/src/completion.rs
+@@ -53,7 +53,7 @@ pub fn blockers(s: &Snapshot) -> Result<Vec<String>> {
+ pub fn complete(st: &Store, s: &mut Snapshot, peer: &str) -> Result<Value> {
+     messages::active(s)?;
+     // The caller holds the metadata lock through validation and commit.
+-    let blockers = blockers(s)?;
++    let blockers = blockers(&crate::secure::visible(s, peer))?;
+     ensure!(
+         blockers.is_empty(),
+         "cannot complete:\n- {}",
+diff --git a/src/main.rs b/src/main.rs
+index 69d8f63..03fd716 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -4,6 +4,7 @@ mod contracts;
+ mod install;
+ mod messages;
+ mod paths;
++mod secure;
+ mod store;
+ mod verify;
+ use anyhow::{Result, ensure};
+@@ -165,7 +166,7 @@ fn run(cli: &Cli) -> Result<Value> {
+             *retry_interrupted,
+         );
+     }
+-    let st = Store::lock(&cli.project)?;
++    let st = Store::lock(&cli.project, peer)?;
+     if let Command::Start { task, owns } = &cli.command {
+         ensure!(peer == "a", "only peer a can start");
+         ensure!(
+@@ -175,6 +176,10 @@ fn run(cli: &Cli) -> Result<Value> {
+         ensure!(!task.trim().is_empty(), "task must not be empty");
+         let owns = paths::list(&st.root, owns)?;
+         let mut s = Snapshot {
++            secure_mode: st.secure,
++            secure_bindings: Default::default(),
++            secure_received: Default::default(),
++            secure_outgoing: Default::default(),
+             format: 1,
+             session: Session::open(&id("s"), &urn("a"), &urn("b"))?,
+             peers: BTreeMap::from([(
+@@ -198,7 +203,7 @@ fn run(cli: &Cli) -> Result<Value> {
+             json!({"task":task,"files":owns,"next":"peer b joins"}),
+         );
+         st.commit(&s)?;
+-        return Ok(json!(s));
++        return Ok(json!(secure::visible(&s, peer)));
+     }
+     let mut s = st.load()?;
+     if let Command::Join { task, owns } = &cli.command {
+@@ -221,10 +226,10 @@ fn run(cli: &Cli) -> Result<Value> {
+             json!({"task":task,"files":owns,"next":"propose contracts"}),
+         );
+         st.commit(&s)?;
+-        return Ok(json!(s));
++        return Ok(json!(secure::visible(&s, peer)));
+     }
+     if matches!(cli.command, Command::Status) {
+-        return Ok(json!(s));
++        return Ok(json!(secure::visible(&s, peer)));
+     }
+     authorize(&s, peer)?;
+     if messages::ingest(&st, &mut s, peer)? {
+diff --git a/src/messages.rs b/src/messages.rs
+index 7f68dbd..992f351 100644
+--- a/src/messages.rs
++++ b/src/messages.rs
+@@ -24,10 +24,40 @@ pub fn send(
+         body,
+     );
+     m.in_reply_to = reply;
+-    receive(s, peer, &m, false)?;
++    if s.secure_mode {
++        if let Some(reply) = &m.in_reply_to {
++            ensure!(
++                crate::secure::visible(s, peer)
++                    .messages
++                    .iter()
++                    .any(|q| &q.message_id == reply),
++                "question has not been securely delivered"
++            );
++        }
++        s.secure_bindings
++            .insert(m.message_id.clone(), crate::secure::binding(s, &m));
++    }
++    if s.secure_mode {
++        let mut validated = crate::secure::visible(s, peer);
++        validated.processed = validated
++            .messages
++            .iter()
++            .map(|m| m.message_id.clone())
++            .collect();
++        receive(&mut validated, peer, &m, false)?;
++        s.processed.insert(m.message_id.clone());
++        s.messages.push(m.clone());
++        s.events.extend(validated.events);
++        s.secure_outgoing.insert(
++            m.message_id.clone(),
++            (m.clone(), s.secure_bindings[&m.message_id].clone()),
++        );
++    } else {
++        receive(s, peer, &m, false)?;
++    }
+     Ok(m.message_id)
+ }
+-fn receive(s: &mut Snapshot, peer: &str, m: &Envelope, incoming: bool) -> Result<()> {
++pub(crate) fn receive(s: &mut Snapshot, peer: &str, m: &Envelope, incoming: bool) -> Result<()> {
+     m.validate()?;
+     s.session.authorize_author(&m.from)?;
+     s.session.authorize_author(&m.to)?;
+@@ -89,6 +119,9 @@ fn receive(s: &mut Snapshot, peer: &str, m: &Envelope, incoming: bool) -> Result
+     Ok(())
+ }
+ pub fn ingest(st: &Store, s: &mut Snapshot, peer: &str) -> Result<bool> {
++    if st.secure {
++        return crate::secure::ingest(st, s);
++    }
+     let dir = st.root.join(".hacp/inbox").join(peer);
+     let mut paths = if dir.exists() {
+         fs::read_dir(dir)?
+@@ -119,6 +152,8 @@ pub fn outstanding_questions(s: &Snapshot) -> Vec<&Envelope> {
+         .collect()
+ }
+ pub fn view(s: &Snapshot, peer: &str, all: bool) -> Value {
++    let visible = crate::secure::visible(s, peer);
++    let s = &visible;
+     let fetched = s.fetched.get(peer);
+     let messages: Vec<_> = s
+         .messages
+@@ -144,7 +179,7 @@ pub fn view(s: &Snapshot, peer: &str, all: bool) -> Value {
+ pub fn poll(root: &Path, peer: &str, all: bool, timeout: Option<u64>) -> Result<Value> {
+     let start = Instant::now();
+     loop {
+-        let st = Store::lock(root)?;
++        let st = Store::lock(root, peer)?;
+         let mut s = st.load()?;
+         authorize(&s, peer)?;
+         ingest(&st, &mut s, peer)?;
+@@ -157,7 +192,7 @@ pub fn poll(root: &Path, peer: &str, all: bool, timeout: Option<u64>) -> Result<
+                 .any(|q| q["to"] == urn(peer))
+             || !result["contract_actions"].as_array().unwrap().is_empty();
+         if ready || timeout.is_none() {
+-            for m in &s.messages {
++            for m in &crate::secure::visible(&s, peer).messages {
+                 if m.to == urn(peer) {
+                     s.fetched
+                         .entry(peer.into())
+diff --git a/src/secure.rs b/src/secure.rs
+new file mode 100644
+index 0000000..e28c640
+--- /dev/null
++++ b/src/secure.rs
+@@ -0,0 +1,270 @@
++//! Optional transport glue. No keys, signatures, nonces, or counters are handled here.
++use crate::store::*;
++use anyhow::{Result, ensure};
++use hacp::{
++    secure::{SecureError, workflow::Workflow},
++    v2::Envelope,
++};
++use sha2::{Digest, Sha256};
++use std::{
++    collections::BTreeMap,
++    fs,
++    io::Read,
++    os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt},
++    path::{Path, PathBuf},
++};
++
++pub fn configured(root: &Path) -> Result<bool> {
++    let requested = std::env::var("HACP_SECURE").is_ok_and(|v| v == "1");
++    let marker = root.join(".hacp/secure-required");
++    if requested || marker.exists() {
++        ensure!(
++            requested,
++            "secure session requires HACP_SECURE=1; plaintext downgrade refused"
++        );
++        ensure!(
++            std::env::var_os("HACP_SECURE_SOCKET").is_some(),
++            "secure guardian socket is required"
++        );
++        if !marker.exists() {
++            ensure!(
++                !root.join(".hacp/session.json").exists(),
++                "enable secure transport at session start"
++            );
++            atomic(&marker, b"required\n")?;
++        }
++        Ok(true)
++    } else {
++        Ok(false)
++    }
++}
++fn workflow(st: &Store, s: &Snapshot) -> Result<Workflow> {
++    let socket = std::env::var_os("HACP_SECURE_SOCKET").ok_or(SecureError::GuardianUnavailable)?;
++    Ok(Workflow::new(
++        Path::new(&socket),
++        &urn(&st.peer),
++        &urn(other(&st.peer)),
++        &s.session.session_id,
++    )?)
++}
++fn private_dir(path: &Path) -> Result<()> {
++    let m = fs::symlink_metadata(path)?;
++    ensure!(
++        m.is_dir()
++            && !m.file_type().is_symlink()
++            && m.uid() == unsafe { libc::geteuid() }
++            && m.mode() & 0o077 == 0,
++        "agent state must be a private owned directory"
++    );
++    Ok(())
++}
++fn state(st: &Store, s: &Snapshot) -> Result<PathBuf> {
++    let base =
++        PathBuf::from(std::env::var_os("HACP_SECURE_STATE").ok_or_else(|| {
++            anyhow::anyhow!("HACP_SECURE_STATE agent-local directory is required")
++        })?);
++    private_dir(&base)?;
++    let base = base.canonicalize()?;
++    ensure!(
++        !base.starts_with(&st.root),
++        "agent state must be outside shared project"
++    );
++    ensure!(
++        s.session.session_id.starts_with("s-")
++            && s.session.session_id[2..]
++                .bytes()
++                .all(|b| b.is_ascii_hexdigit()),
++        "invalid session id"
++    );
++    let key = format!(
++        "{:x}",
++        Sha256::digest(st.root.as_os_str().as_encoded_bytes())
++    );
++    let mut dir = base;
++    for part in [
++        key.as_str(),
++        s.session.session_id.as_str(),
++        st.peer.as_str(),
++    ] {
++        dir.push(part);
++        if !dir.exists() {
++            fs::create_dir(&dir)?;
++            fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))?;
++        }
++        private_dir(&dir)?;
++    }
++    Ok(dir)
++}
++fn cache(st: &Store, s: &Snapshot) -> Result<PathBuf> {
++    let dir = state(st, s)?.join("received");
++    if !dir.exists() {
++        fs::create_dir(&dir)?;
++        fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))?;
++    }
++    private_dir(&dir)?;
++    Ok(dir)
++}
++pub fn ingest(st: &Store, s: &mut Snapshot) -> Result<bool> {
++    if !st.secure {
++        return Ok(false);
++    }
++    ensure!(s.secure_mode, "secure session mode mismatch");
++    let cache = cache(st, s)?;
++    let previous = s.secure_received.clone();
++    s.secure_received.clear();
++    if cache.exists() {
++        for entry in fs::read_dir(&cache)? {
++            let mut bytes = Vec::new();
++            fs::OpenOptions::new()
++                .read(true)
++                .custom_flags(libc::O_NOFOLLOW)
++                .open(entry?.path())?
++                .take(16 * 1024 * 1024 + 1)
++                .read_to_end(&mut bytes)?;
++            ensure!(bytes.len() <= 16 * 1024 * 1024, "oversized delivery cache");
++            let m: Envelope = serde_json::from_slice(&bytes)?;
++            m.validate()?;
++            ensure!(
++                m.from == urn(other(&st.peer))
++                    && m.to == urn(&st.peer)
++                    && m.session_id == s.session.session_id,
++                "invalid delivery cache"
++            );
++            s.secure_received
++                .entry(st.peer.clone())
++                .or_default()
++                .insert(m.message_id.clone(), m);
++        }
++    }
++    let inbox = workflow(st, s)?.receive()?;
++    let mut errors = inbox.errors;
++    for m in &inbox.messages {
++        let result = (|| -> Result<()> {
++            let mut received_view = visible(s, &st.peer);
++            received_view.processed = received_view
++                .messages
++                .iter()
++                .map(|m| m.message_id.clone())
++                .collect();
++            if let Some(old) = received_view
++                .messages
++                .iter()
++                .find(|old| old.message_id == m.message_id)
++            {
++                ensure!(old == m, "conflicting authenticated message id");
++            }
++            crate::messages::receive(&mut received_view, &st.peer, m, true)?;
++            // Save validated deliveries before surfacing any other failure.
++            atomic(
++                &cache.join(format!("{}.json", m.message_id)),
++                &serde_json::to_vec(m)?,
++            )?;
++            s.secure_received
++                .entry(st.peer.clone())
++                .or_default()
++                .insert(m.message_id.clone(), m.clone());
++            Ok(())
++        })();
++        if result.is_err() {
++            errors.push(SecureError::SchemaViolation);
++        }
++    }
++    for e in errors {
++        if e != SecureError::ReplayRejected {
++            return Err(e.into());
++        }
++    }
++    Ok(s.secure_received != previous)
++}
++pub fn stage(st: &Store, s: &Snapshot) -> Result<()> {
++    let local = state(st, s)?;
++    for (id, frame) in &s.secure_outgoing {
++        ensure!(
++            frame.0.message_id == *id && frame.0.from == urn(&st.peer),
++            "invalid outgoing frame"
++        );
++        let path = local.join(format!("queued-{id}"));
++        let bytes = serde_json::to_vec(frame)?;
++        if path.exists() {
++            let mut existing = Vec::new();
++            fs::OpenOptions::new()
++                .read(true)
++                .custom_flags(libc::O_NOFOLLOW)
++                .open(&path)?
++                .take(16 * 1024 * 1024 + 1)
++                .read_to_end(&mut existing)?;
++            ensure!(existing == bytes, "conflicting locally staged message id");
++        } else {
++            atomic(&path, &bytes)?;
++        }
++    }
++    Ok(())
++}
++pub fn project(st: &Store, s: &Snapshot) -> Result<()> {
++    ensure!(s.secure_mode, "secure session mode mismatch");
++    let w = workflow(st, s)?;
++    let local = state(st, s)?;
++    let begun = local.join("started");
++    if !begun.exists() {
++        w.ensure_session(st.peer == "a")?;
++        atomic(&begun, b"started\n")?;
++    }
++    for m in s.messages.iter().filter(|m| m.from == urn(&st.peer)) {
++        let sent = local.join(format!("sent-{}", m.message_id));
++        if !sent.exists() {
++            let queued = local.join(format!("queued-{}", m.message_id));
++            // Shared state cannot authorize a new outgoing message.
++            if !queued.exists() {
++                continue;
++            }
++            let mut bytes = Vec::new();
++            fs::OpenOptions::new()
++                .read(true)
++                .custom_flags(libc::O_NOFOLLOW)
++                .open(queued)?
++                .take(16 * 1024 * 1024 + 1)
++                .read_to_end(&mut bytes)?;
++            ensure!(bytes.len() <= 16 * 1024 * 1024, "oversized outgoing frame");
++            let (original, binding): (Envelope, String) = serde_json::from_slice(&bytes)?;
++            ensure!(
++                &original == m,
++                "shared outgoing frame changed after local authorization"
++            );
++            w.send(&original, &binding)?;
++            atomic(&sent, b"sent\n")?;
++        }
++    }
++    Ok(())
++}
++pub fn binding(s: &Snapshot, m: &Envelope) -> String {
++    fn revision(entry: &serde_json::Value) -> Option<String> {
++        entry["contract"]["revisions"].as_array()?.last()?["digest"]
++            .as_str()
++            .map(|d| format!("sha256:{}", d.strip_prefix("sha256:").unwrap_or(d)))
++    }
++    if let Some(cid) = m.body["contract_id"].as_str() {
++        return s.contracts.get(cid).and_then(revision).unwrap_or_default();
++    }
++    s.contracts
++        .values()
++        .filter_map(revision)
++        .next()
++        .unwrap_or_default()
++}
++/// Shared contract state remains cooperative. Peer messages require guardian receipts.
++pub fn visible(s: &Snapshot, peer: &str) -> Snapshot {
++    if !s.secure_mode {
++        return s.clone();
++    }
++    let mut v = s.clone();
++    let received = s
++        .secure_received
++        .get(peer)
++        .cloned()
++        .unwrap_or_else(BTreeMap::new);
++    v.messages.retain(|m| m.from == urn(peer));
++    v.messages.extend(received.into_values());
++    v.events.clear();
++    v.secure_received.clear();
++    v
++}
+diff --git a/src/store.rs b/src/store.rs
+index 5346fa6..e0f96cf 100644
+--- a/src/store.rs
++++ b/src/store.rs
+@@ -19,6 +19,14 @@ pub struct Registration {
+ }
+ #[derive(Clone, Serialize, Deserialize)]
+ pub struct Snapshot {
++    #[serde(default)]
++    pub secure_mode: bool,
++    #[serde(default)]
++    pub secure_bindings: BTreeMap<String, String>,
++    #[serde(skip)]
++    pub secure_received: BTreeMap<String, BTreeMap<String, Envelope>>,
++    #[serde(skip)]
++    pub secure_outgoing: BTreeMap<String, (Envelope, String)>,
+     pub format: u32,
+     pub session: Session,
+     pub peers: BTreeMap<String, Registration>,
+@@ -48,10 +56,12 @@ pub fn id(prefix: &str) -> String {
+ }
+ pub struct Store {
+     pub root: PathBuf,
++    pub peer: String,
++    pub secure: bool,
+     _lock: File,
+ }
+ impl Store {
+-    pub fn lock(root: &Path) -> Result<Self> {
++    pub fn lock(root: &Path, peer: &str) -> Result<Self> {
+         let root = root
+             .canonicalize()
+             .context("project directory does not exist")?;
+@@ -83,7 +93,13 @@ impl Store {
+                 Err(e) => return Err(e.into()),
+             }
+         }
+-        Ok(Self { root, _lock: lock })
++        let secure = crate::secure::configured(&root)?;
++        Ok(Self {
++            root,
++            peer: peer.into(),
++            secure,
++            _lock: lock,
++        })
+     }
+     pub fn load(&self) -> Result<Snapshot> {
+         let mut s: Snapshot = serde_json::from_slice(
+@@ -97,10 +113,23 @@ impl Store {
+                 &serde_json::to_vec_pretty(&s)?,
+             )?;
+         }
++        anyhow::ensure!(
++            s.secure_mode == self.secure,
++            "secure mode mismatch; plaintext downgrade refused"
++        );
++        if crate::secure::ingest(self, &mut s)? {
++            atomic(
++                &self.root.join(".hacp/session.json"),
++                &serde_json::to_vec_pretty(&s)?,
++            )?;
++        }
+         self.project(&s, false)?;
+         Ok(s)
+     }
+     pub fn commit(&self, s: &Snapshot) -> Result<()> {
++        if self.secure {
++            crate::secure::stage(self, s)?;
++        }
+         failpoint("before_commit");
+         atomic(
+             &self.root.join(".hacp/session.json"),
+@@ -117,7 +146,10 @@ impl Store {
+                 &serde_json::to_vec_pretty(c)?,
+             )?;
+         }
+-        for m in &s.messages {
++        if self.secure {
++            crate::secure::project(self, s)?;
++        }
++        for m in s.messages.iter().filter(|_| !self.secure) {
+             let peer = hacp::v2::envelope::agent_urn::parse(&m.to).map_err(anyhow::Error::msg)?;
+             atomic(
+                 &state
+diff --git a/src/verify.rs b/src/verify.rs
+index 3c4c7a0..0d03cf8 100644
+--- a/src/verify.rs
++++ b/src/verify.rs
+@@ -161,7 +161,7 @@ fn measure(
+     })
+ }
+ pub fn verify(root: &Path, peer: &str, cid: &str, timeout: u64, retry: bool) -> Result<Value> {
+-    let st = Store::lock(root)?;
++    let st = Store::lock(root, peer)?;
+     let mut s = st.load()?;
+     authorize(&s, peer)?;
+     messages::active(&s)?;
+@@ -231,7 +231,7 @@ pub fn verify(root: &Path, peer: &str, cid: &str, timeout: u64, retry: bool) ->
+             });
+             measurements.push(measured);
+             // Persist each completed command; recovery never executes commands.
+-            let st = Store::lock(&root)?;
++            let st = Store::lock(&root, peer)?;
+             let mut s = st.load()?;
+             let mut current = contracts::entry(&s, cid)?;
+             ensure!(
+@@ -273,7 +273,7 @@ pub fn verify(root: &Path, peer: &str, cid: &str, timeout: u64, retry: bool) ->
+         failed,
+         vec![],
+     )?;
+-    let st = Store::lock(&root)?;
++    let st = Store::lock(&root, peer)?;
+     let mut s = st.load()?;
+     messages::active(&s)?;
+     let mut current: Entry = contracts::entry(&s, cid)?;
