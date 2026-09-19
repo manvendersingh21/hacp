@@ -19,8 +19,7 @@ custody out of agent processes, but it does not change the statements above:
   **degraded mode**: same-UID filesystem access can read guardian state, so
   process isolation must not be claimed in that mode. The guardian says so
   loudly at startup. Dedicated-UID isolation has not been validated; see
-  [docs/security-architecture.md](docs/security-architecture.md) and
-  [docs/trust-boundary.md](docs/trust-boundary.md).
+  [docs/security-architecture.md](docs/security-architecture.md).
 - Secure-session private state (receipts, send markers) belongs in an
   operator-configured `HACP_SECURE_STATE` directory **outside the shared
   project**, never under the agent-visible workspace.
@@ -29,9 +28,8 @@ custody out of agent processes, but it does not change the statements above:
   control state consistently. Plaintext endpoint histories and model contexts
   are outside edge confidentiality.
 
-The full threat model, guarantees, and non-goals are in
-[docs/hacp-secure-threat-model.md](docs/hacp-secure-threat-model.md) and
-[docs/hacp-secure-non-goals.md](docs/hacp-secure-non-goals.md).
+The full threat model and non-goals are in
+[docs/hacp-secure-threat-model.md](docs/hacp-secure-threat-model.md).
 
 For a suspected vulnerability, use GitHub's private vulnerability reporting
 option on this repository's **Security** tab if available. If it is unavailable,

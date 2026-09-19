@@ -26,6 +26,12 @@
   frozen-schema and fixed-error rules, `SKIP(degraded)` convention), its
   boundaries and reporting scope in `SECURITY.md`, and its test entry points
   in `docs/TESTING-YOUR-PROTOCOL.md`.
+- Consolidate and crisp the secure-layer documentation: the trust boundary and
+  boundary rules move into `docs/security-architecture.md`; the non-goals move
+  into `docs/hacp-secure-threat-model.md`; the hackathon scope and the
+  bilateral integration-review narratives are dropped. All normative content
+  (adversary model, handshake, key schedule, envelope, binding, replay,
+  pipeline, error taxonomy, test matrix) is retained.
 
 ## 1.1.1
 

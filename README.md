@@ -230,9 +230,8 @@ live only in a per-agent `hacp-secure-guardian` daemon (built with
 Start with the [integration and upgrade guide](docs/hacp-secure-integration.md)
 for compatibility details and required setup (guardian deployment, the
 hacp-skill patch, and the private `HACP_SECURE_STATE` directory). The
-[security architecture](docs/security-architecture.md),
-[trust boundary](docs/trust-boundary.md), and
-[threat model](docs/hacp-secure-threat-model.md) documents define the
+[security architecture](docs/security-architecture.md) and
+[threat model](docs/hacp-secure-threat-model.md) define the
 guarantees and the explicit same-UID degraded mode used by the
 [local demo](docs/hacp-secure-local-demo.md). Optional Wasmer sandbox execution
 and Tenki deployment demonstrators live under `infra/` and are described in

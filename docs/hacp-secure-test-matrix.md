@@ -1,15 +1,14 @@
 # HACP Secure — Test Matrix
 
-Status: v1 (peer b) · Session s-3337e50c7f3c4d1c81024028690f7942 · Contract c-f52fbdb9da524494aff8aed2327d36d6
 Sources: `docs/security-architecture.md` §4–§9, `spec/schemas/secure-envelope.json`,
 `docs/hacp-secure-threat-model.md` (TH-xx), `docs/hacp-secure-modules.md` §4 pipeline.
 
 **Conventions.**
 - **Layer:** `U` = unit test in the module; `I` = integration test with two in-process guardians and a temp edge directory; `E` = end-to-end with two real `hacp-secure-guardian` processes, the `hacp` binary, and hacp-skill commands; `S` = static or build check.
 - **Expected** is what the receiver's guardian returns. "abort" means the session is torn down and further envelopes for its `sid` get `SessionUnknown`.
-- **Canary:** tests marked ⚑ plant known byte patterns (identity seed, session key, plaintext) and scan *every* agent-reachable output for them: stdout, stderr, error strings, `.hacp/`, `.hacp-secure/`.
-- **Mode:** `std` means the test only runs with a dedicated guardian uid; everything else runs in both modes. A `std` test skipped in degraded mode must print `SKIP(degraded)`, never pass silently.
-- **Settled:** every expected result reflects decisions accepted through HACP (challenges 1–5, F1–F7). Error expectations follow the normative pipeline order in architecture §8: routing, then signature, then sequence window, then AEAD, then TIER-2.
+- **Canary ⚑:** planted byte patterns (identity seed, session key, plaintext) scanned across *every* agent-reachable output: stdout, stderr, error strings, `.hacp/`, `.hacp-secure/`.
+- **Mode:** `std` runs only with a dedicated guardian uid. A `std` test skipped in degraded mode prints `SKIP(degraded)`, never passes silently.
+- Error expectations follow the normative pipeline order in the architecture §8.
 
 ## 1. Functional baseline and compatibility
 

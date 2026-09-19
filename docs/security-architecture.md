@@ -1,359 +1,239 @@
 # HACP Secure — Security Architecture
 
-Status: DRAFT v3 (peer a, revised after peer b challenges 1–5 and follow-ups F1–F4) · Session s-3337e50c7f3c4d1c81024028690f7942
 Primitives: X25519 (RFC 7748) · HKDF-SHA256 (RFC 5869) · ChaCha20-Poly1305
-(RFC 8439) · Ed25519 (RFC 8032)
+(RFC 8439) · Ed25519 (RFC 8032). Companion: `docs/hacp-secure-threat-model.md`,
+`spec/schemas/secure-envelope.json`.
 
-## 0. Design rule
+## 1. Design rule and adversary
 
-HACP Secure does **not** modify the HACP collaboration protocol (frozen
-HACP/1.1 + HACP/2.0 draft). It is a payload-protection layer *under* the
-existing message flow: HACP messages keep their URNs, kinds, contracts, and
-digests; a message payload that must be protected is replaced by a
-`SecureEnvelope` before it touches the shared file edge.
+HACP Secure does **not** modify HACP (frozen 1.1 + 2.0 draft). It is a
+payload-protection layer *under* the existing message flow: a payload that
+must be protected is replaced by a `SecureEnvelope` before it touches the
+shared file edge.
 
-## 1. Adversary model (challenge 1 — accepted)
+The adversary is a **prompt-injected or compromised agent reasoning loop**
+with arbitrary tool calls and arbitrary writes into the shared project
+directory, running as the **same OS uid** as its guardian. A guardian-uid or
+root compromise is out of scope (trust kernel). The LLM context is always
+untrusted: everything an agent can see is public and injectable.
 
-**The adversary is a prompt-injected or otherwise compromised agent reasoning
-loop** that can emit arbitrary tool calls and arbitrary writes into the
-shared project directory, running as the **same OS uid** as its guardian.
-It is *not* assumed to be a patient human attacker with unattended shell
-access; and the architecture explicitly does not defend against an attacker
-with guardian-uid privileges (that is the trust kernel, §1.1).
-
-Mechanism that stops `cat ~/.hacp-secure/identity.key`:
-
-| Deployment | Mechanism | Status |
+| Mode | Key protection | Status |
 |---|---|---|
-| **Standard** | Guardian runs under a **dedicated OS uid** (launchd/sudoers recipe documented). Keyfile 0600 owned by guardian uid; socket 0700; agent uid may *connect* but never *read*. | Specified, falsifiable: `sudo -u agent cat <keyfile>` must fail |
-| **Degraded (hackathon laptop)** | Same-uid guardian. Property reduces to **context hygiene**: no agent-reachable tool returns, accepts, or logs key material; the attack must actively locate and read a path no tool ever surfaces. | **Documented residual risk** — labeled, not silent |
+| **Standard** | Guardian runs under a dedicated OS uid; 0600 keyfile, 0700 socket. Agent uid may *connect* but never *read*. Falsifiable: `sudo -u agent cat <keyfile>` must fail | Specified |
+| **Degraded** | Same-uid guardian. Reduces to **context hygiene**: no agent-reachable tool returns, accepts, or logs key material | Documented residual risk, labeled at startup |
 
-Both modes state their active level at guardian startup; the level is
-recorded in every session's metadata and surfaced to both peers.
+## 2. Actors and trust boundaries
 
-### 1.1 Trust kernel
+| Actor | Sees keys? | Trusted for |
+|---|---|---|
+| Agent (LLM context) | **Never** — envelopes (ciphertext) only | Choosing to protect a payload |
+| Guardian (per agent) | **Yes** — sole holder of private keys | All crypto: handshake, seal, open, sign |
+| File edge (`.hacp-secure/`) | No — ciphertext only | Best-effort, at-least-once delivery |
+| Operator | Yes, at provisioning | Identity provisioning; not message content |
 
-The guardian's OS account (standard mode) is the security kernel for that
-agent. Anything with those privileges is out of scope. The LLM context is
-**always** untrusted: everything an agent can see is treated as public and
-injectable.
+```
+ operator (out-of-band): init keys inside guardians, exchange pinned
+   public keys by fingerprint → peers.json OUTSIDE the project
+        │ pin                                 │ pin
+        ▼                                     ▼
+ AGENT A (untrusted, injectable)        AGENT B (untrusted, injectable)
+   │ UDS: seal/open/session               ▲ UDS
+   ▼                                      │
+ GUARDIAN A (trust kernel, own uid)     GUARDIAN B
+   │ ciphertext only                       ▲
+   ▼                                       │
+ ══ UNTRUSTED SHARED FILE EDGE (.hacp-secure/) ══
+   no keys, no pins, no counters persist here
+```
 
-## 2. Actors and trust boundaries (summary; full diagram in docs/trust-boundary.md)
+Boundary rules:
 
-| Actor | Runs where | Sees key material? | Trusted for |
-|---|---|---|---|
-| Agent A / Agent B (CLI LLM) | user session | **Never** — handles envelopes (ciphertext) only | Choosing to protect a payload; normal hacp-skill flow |
-| Guardian A / Guardian B | separate OS process per agent; standard mode: dedicated uid | **Yes** — sole holder of that agent's private keys | Crypto operations: handshake, seal, open, sign |
-| File edge (`.hacp-secure/` in project) | shared project directory | No — ciphertext only | Best-effort, at-least-once delivery |
-| Operator (human) | provisioning time | Yes — creates keys, exchanges pinned public keys out-of-band | Identity provisioning; not message content |
+1. Everything inside an LLM context is public; the agent-facing surface
+   contains no key material, so no tool call can *return* a secret.
+2. The shared project directory is hostile. Only ciphertext crosses it;
+   integrity comes from signatures/AEAD, never file permissions; nothing
+   inside the project can change identity trust.
+3. A guardian's uid is the security kernel (standard mode). In degraded mode
+   that kernel is absent and only rule 1 holds — startup says so.
+4. The operator is trusted for identity, not content (ephemeral DH means no
+   session-key knowledge).
+5. Failure is closed: every verification failure drops the envelope and
+   surfaces a named error; `require_secure` sessions never fall back to
+   plaintext; guardian unavailability blocks the operation.
 
-## 3. Identity model (challenge 5a — pinned trust root, accepted)
+## 3. Identity
 
-- An agent's HACP identity remains its URN (`urn:hacp:agent:a`).
-- At provisioning, the operator generates an Ed25519 identity keypair *inside
-  each guardian* (`hacp-secure-guardian init`); the private key never leaves
-  the guardian — no export command exists.
-- Peer public keys are **pinned in guardian-private config**
-  (`~/.hacp-secure/<agent>/peers.json`, outside the project, writable only by
-  the guardian uid), exchanged out-of-band with fingerprint confirmation by
-  the operator (TOFU-with-confirmation). Each pin entry carries
-  `{urn, ed25519_pub, require_secure}` — `require_secure` is the **security
-  mode policy** for that peer (F1), set at provisioning, default `true`.
-  **Nothing inside `.hacp/` or the project directory can change a pin or a
-  policy.** If it could, impersonation would be a file write and the design
-  would collapse.
+- An agent's identity is its URN. Ed25519 keypairs are generated *inside* the
+  guardian (`init`); no export command exists.
+- Peer public keys are **pinned** in guardian-private `peers.json` outside the
+  project: `{urn, ed25519_pub, require_secure}`, exchanged out-of-band with
+  fingerprint confirmation. Nothing in `.hacp/` can change a pin or policy.
 - A sender is authenticated iff its handshake signature verifies under the
-  pinned public key for the URN it claims. Missing pin or pin mismatch is
-  `IdentityMismatch` — fail closed.
-- No certificates, no chain validation, no key rotation/revocation
-  (non-goals). A key is replaced by operator re-provisioning.
+  pinned key for the claimed URN; missing pin or mismatch is
+  `IdentityMismatch` (fail closed).
+- No certificates, rotation, or revocation. A key is replaced by operator
+  re-provisioning.
 
-## 4. Session establishment (signed-ephemeral handshake: mutual auth + forward secrecy)
+## 4. Handshake and key schedule
 
-One round trip, initiator = `hello` sender. Challenge 3a settled: **signed
-ephemeral X25519**, identity keys never perform DH. All labels are ASCII
-domain separators. `hacp_session` is the existing HACP session id string
-(e.g. `s-3337e50c…`); binding the secure session to it is TIER-1 of the
-binding model (§6).
+One round trip, **signed ephemeral X25519**; identity keys never perform DH.
+`hacp_session` (the existing HACP session id) is bound into every transcript.
 
 ```
-A → B  hello:
-  { v:1, kind:"hello", from:urn_a, to:urn_b,
-    epub: e_a_pub, nonce: n_a,
-    sig: Ed25519_sk_a("HACP-SECURE/v1/hello" || hacp_session ||
-                      urn_a || urn_b || e_a_pub || n_a) }
+A → B  hello { v:1, kind, from, to, epub:e_a_pub, nonce:n_a,
+        sig = sk_a("HACP-SECURE/v1/hello" ‖ hacp_session ‖ urn_a ‖ urn_b ‖ e_a_pub ‖ n_a) }
+B: verify under pinned(urn_a)               → else BadHandshakeSignature/IdentityMismatch
+B → A  ack   { …, sid, epub:e_b_pub, nonce:n_b,
+        sig = sk_b("HACP-SECURE/v1/ack" ‖ hacp_session ‖ urn_b ‖ urn_a ‖ e_a_pub ‖ n_a ‖ e_b_pub ‖ n_b) }
+A: verify under pinned(urn_b)               → else BadHandshakeSignature/IdentityMismatch
 
-B: verify sig under pinned(urn_a)            → else BadHandshakeSignature/IdentityMismatch
-
-B → A  ack:
-  { v:1, kind:"ack", from:urn_b, to:urn_a, sid,
-    epub: e_b_pub, nonce: n_b,
-    sig: Ed25519_sk_b("HACP-SECURE/v1/ack" || hacp_session || urn_b || urn_a ||
-                      e_a_pub || n_a || e_b_pub || n_b) }
-
-A: verify sig under pinned(urn_b)            → else BadHandshakeSignature/IdentityMismatch
+ikm   = X25519(e_priv, e_pub_peer)
+salt  = n_a ‖ n_b
+ctx   = "HACP-SECURE/v1/session" ‖ hacp_session ‖ urn_initiator ‖ urn_responder
+sid   = HKDF-SHA256(ikm, salt, ctx‖"sid",   16)
+k_i2r = HKDF-SHA256(ikm, salt, ctx‖"k_i2r", 32)     # initiator→responder
+k_r2i = HKDF-SHA256(ikm, salt, ctx‖"k_r2i", 32)     # responder→initiator
 ```
 
-Key schedule (both sides; challenge 3b accepted — two labeled directional
-keys, not okm slicing):
+- Mutual authentication: signatures cover both ephemerals, both nonces, URNs,
+  and the HACP session id — no swap or cross-session reuse without breaking a
+  signature. Forward secrecy: ephemeral DH only.
+- Replayed/flooded hellos are bounded: **at most 4 pending sessions per peer**
+  (oldest evicted); an evicted hello fails at the first `msg` and must re-run.
+
+## 5. SecureEnvelope
+
+JSON, canonical form per HACP v2 canonical JSON rules; the canonical header
+(without `ct`/`sig`) is the AAD. Exact schema:
+`spec/schemas/secure-envelope.json`.
+
+| Field | Present | Meaning |
+|---|---|---|
+| `v` = 1 | always | version |
+| `kind` = hello\|ack\|msg | always | envelope kind |
+| `from`, `to` | always | URNs |
+| `contract` | always | frozen revision digest (`sha256:<64hex>`) or `""` for bootstrap |
+| `sid` | ack, msg | session id |
+| `seq` | msg | per-direction counter; also the AEAD nonce input |
+| `epub`, `nonce` | hello, ack | ephemeral X25519 pub, handshake nonce |
+| `sig` | all | Ed25519 signature (inputs below) |
+| `ct` | msg | ChaCha20-Poly1305 ciphertext ‖ 16-byte tag |
+| `ts` | optional | advisory only; never an auth input |
+
+Encrypt-then-sign, with domain separation on every signed input:
 
 ```
-ikm   = X25519(e_a_priv, e_b_pub)            # == X25519(e_b_priv, e_a_pub)
-salt  = n_a || n_b                            # 64 bytes
-ctx   = "HACP-SECURE/v1/session" || hacp_session || urn_initiator || urn_responder
-sid   = HKDF-SHA256(ikm, salt, ctx || "sid",   16)   # session id
-k_i2r = HKDF-SHA256(ikm, salt, ctx || "k_i2r", 32)   # initiator→responder
-k_r2i = HKDF-SHA256(ikm, salt, ctx || "k_r2i", 32)   # responder→initiator
-```
-
-- Authentication: Ed25519 signatures over the transcript (both ephemerals,
-  both nonces, URNs, HACP session id) — no ephemeral or identity swap is
-  possible without breaking a signature.
-- Forward secrecy: ephemeral X25519 only; identity keys never perform DH.
-- **Pending-session bound (nit 5 — accepted)**: processing a `hello`
-  allocates responder state before any key confirmation, so replayed or
-  flooded hellos are a memory vector. The responder holds **at most 4
-  pending sessions per peer (oldest evicted)**; a `hello` for an evicted
-  pending session simply fails at the first `msg` and must be re-run.
-- Tier-1 binding: `hacp_session` in every signed transcript and in `ctx`, so
-  a secure session's keys are unusable in any other HACP session.
-
-## 5. SecureEnvelope (exact wire format)
-
-JSON object, canonical form per HACP v2 canonical JSON rules (sorted keys, no
-insignificant whitespace) — the canonical form of the header is the AAD
-basis (challenge 5b accepted: **injective canonical-JSON encoding**, not
-naive concatenation). Field set:
-
-| Field | Type | Present | Meaning |
-|---|---|---|---|
-| `v` | `1` | always | version |
-| `kind` | `hello`\|`ack`\|`msg` | always | envelope kind |
-| `from`, `to` | URN string | always | claimed sender / intended recipient |
-| `contract` | `sha256:<64hex>` or `""` | always | TIER-2 binding: frozen HACP contract revision digest; `""` for pre-contract bootstrap traffic |
-| `sid` | 32 hex (16 bytes) | ack, msg | secure session id (§4) |
-| `seq` | u64 ≥ 0 | msg | per-direction sequence number, starts 0; also the AEAD nonce input |
-| `epub` | 64 hex (32 bytes) | hello, ack | sender's ephemeral X25519 public key |
-| `nonce` | 64 hex (32 bytes) | hello, ack | sender's random handshake nonce |
-| `sig` | 128 hex (64 bytes) | hello, ack, **msg** | Ed25519 signature; input defined below |
-| `ct` | ≥32 hex | msg | ChaCha20-Poly1305 ciphertext ‖ 16-byte tag |
-| `ts` | RFC 3339 | optional, advisory | never a replay/auth decision input |
-
-Exact JSON Schema: `spec/schemas/secure-envelope.json`.
-
-Message protection (encrypt-then-sign, challenge 5c accepted; F2
-domain separation added):
-
-```
-aad     = canonical_json(envelope with "ct" and "sig" removed)
-nonce96 = 0x00000000 || u64be(seq)                     # §7 replay counter IS the nonce
+aad     = canonical_json(envelope minus ct, sig)
+nonce96 = 0x00000000 ‖ u64be(seq)
 ct      = ChaCha20-Poly1305(k_dir, nonce96, aad, plaintext)
-sig     = Ed25519(identity_sk_sender, "HACP-SECURE/v1/msg" || aad_bytes || ct_bytes)
+sig     = Ed25519(sk_sender, "HACP-SECURE/v1/msg" ‖ aad ‖ ct)
 ```
 
-**Signing-oracle defense (F2 — accepted).** One Ed25519 identity key signs
-both handshakes and messages, so every signed byte string carries a
-domain-separation prefix: `"HACP-SECURE/v1/hello"`, `"HACP-SECURE/v1/ack"`,
-`"HACP-SECURE/v1/msg"`. No prefix-less signing input exists. The
-agent-reachable guardian API exposes only `seal` / `open` / `session` —
-**there is no raw `sign(bytes)` endpoint**, so an injected agent cannot have
-the identity key sign attacker-chosen content.
+- No prefix-less signing input exists, and the guardian API exposes only
+  `session`/`seal`/`open`/`status`/`fingerprint` — **no raw `sign(bytes)`**,
+  so an injected agent cannot make the identity key sign chosen content.
+- The required per-message signature gives third-party attributability: any
+  holder of the pinned public key can attribute an envelope without AEAD keys
+  (non-repudiation is in scope).
+- Envelopes are written to `.hacp-secure/<sid>/<seq>-<from>.json`.
 
-- AEAD gives peer-to-peer confidentiality/integrity; the **required**
-  per-message Ed25519 signature over (AAD ‖ ciphertext) gives third-party
-  attributability: any verifier holding the sender's pinned public key can
-  attribute the envelope without ever holding AEAD keys — this feeds HACP's
-  evidence/verification/dispute model (`EvidenceKind::Signature`), and
-  non-repudiation is therefore **in scope**, not a non-goal.
-- The plaintext is the raw HACP message payload bytes the agent chose to
-  protect. Envelopes are written to `.hacp-secure/<sid>/<seq>-<from>.json`
-  on the shared file edge.
+## 6. Two-tier contract binding
 
-## 6. Two-tier contract binding (challenge 2 — accepted)
+- **TIER-1 (always)**: every envelope is bound to the HACP session via the
+  handshake transcript, HKDF `ctx`, and `sid` (in the AAD). Cross-session
+  replay fails the tag.
+- **TIER-2 (frozen contracts)**: envelopes sent while the referenced contract
+  is frozen carry `contract = <revision digest>` in the AAD. Bootstrap traffic
+  carries `""` — the digest cannot exist before the revision does.
 
-**TIER-1 (always)**: every envelope is bound to the HACP session via the
-handshake transcript, `ctx`, and `sid`; replaying an envelope into a
-different HACP session fails the tag (`sid` is in the AAD).
-
-**TIER-2 (executing/verifying state)**: envelopes sent while the referenced
-HACP contract is frozen carry `contract = <frozen revision digest>` in the
-AAD. Bootstrap traffic (propose/accept/terms/questions that *create* the
-revision) carries `contract = ""` — the digest cannot be bound before it
-exists, which is exactly why binding is two-tier.
-
-Receiver policy for TIER-2 on `msg`:
-
-| Receiver observation of that revision | Action |
+| Receiver observation | Action |
 |---|---|
-| Known and matches | deliver |
-| **Not yet observed** | **HOLD** (`ContractPending`): envelope stays sealed in a per-session hold queue, re-evaluated at each state observation; delivered when the revision appears; dropped at session close. Legitimate shared-store race, not an attack. **Bounded (F4 — accepted): capacity 64 envelopes; overflow is `HoldOverflow`, a hard session abort** (a peer must not be able to exhaust guardian memory). |
-| Contradicts a different observed frozen revision | `ContractMismatch` → hard session abort |
+| Digest matches observed frozen revision | deliver |
+| Not yet observed | **HOLD** (`ContractPending`) in the bounded queue; re-evaluated on each observation; dropped at close |
+| Contradicts a different observed revision | `ContractMismatch` → hard abort |
 
-Sequence accounting follows the §8 pipeline: the window is checked at step
-5, and `high` advances only when the AEAD open at step 6 succeeds; only
-*delivery* is deferred for held envelopes.
-
-**TIER-2 trust source, stated honestly (F7 — accepted).** The guardian
-learns "the observed frozen revision" from `.hacp/`, which a same-uid agent
-can rewrite. TIER-2 therefore proves **only that the sender made an
-attributable, signed claim of revision D** — not that both peers agreed to
-D, because a compromised agent can rewrite its own `.hacp` record. The
-guardian recomputes the revision digest as SHA-256 over the canonical
-record (`{contract_id, revision, content}`) before trusting any record, so
-it cannot be fooled by *undetectably* forged digests — but control-plane
-(`.hacp`) authenticity itself is a non-goal: signed freezes would be a
-change to HACP, which this layer must not make.
+Trust source, stated honestly: the guardian observes "frozen revision" in
+`.hacp/`, which a same-uid agent can rewrite. It recomputes every digest as
+SHA-256 over canonical `{contract_id, revision, content}` before trusting a
+record, but TIER-2 proves only an **attributable signed claim of revision D**,
+not bilateral consent. Control-plane authenticity is a non-goal (signed
+freezes would change HACP).
 
 ## 7. Replay protection
 
-- Challenge 3c accepted: **deterministic nonces** — the replay counter is
-  the AEAD nonce (`0x00000000 || u64be(seq)`). Directional keys (§4) make
-  cross-direction nonce collision impossible without a 4-byte direction
-  prefix; within a direction the sender's monotonic counter plus the
-  receiver's window make reuse an *invariant violation*, detectable by
-  construction, not a birthday gamble.
-- **Replay state lives only in guardian memory (F3 — accepted).** Session
-  keys and receive high-water marks are never persisted in the project
-  directory — anything there is agent-deletable, and a rolled-back counter
-  would resurrect accepted nonces. A guardian restart voids all sessions
-  (`SessionExpired`); recovery is a fresh signed-ephemeral handshake. There
-  are no persisted counters to roll back.
-- Receiver rule per direction, `high` = highest seq accepted so far:
-  - `seq == high + 1` → accept, `high = seq`.
-  - `seq <= high` (duplicate or regression) → `ReplayRejected`: **drop and
-    audit, never a session abort** — HACP's at-least-once edge (C3) makes
-    duplicates ordinary traffic; the audit record distinguishes
-    `duplicate` vs `regression`; `high` is unchanged; delivery stays
-    exactly-once.
-  - `seq > high + 1` (gap) → **hold, never silently drop (F5 — accepted)**:
-    the envelope enters the bounded hold queue (§6, shared with
-    contract-pending holds, keyed by seq) and is decrypted and delivered
-    in order when the missing sequence numbers arrive, preserving
-    exactly-once in-order delivery and tolerating edge reordering. A gap is
-    not benign: at-least-once edges do not lose messages, so an unfilled
-    hole means deletion. The session hard-aborts with **`SequenceGap`** if
-    (a) the hold queue overflows (`HoldOverflow`), or (b) a newer envelope
-    *beyond those already held* arrives while the earliest hole persists —
-    evidence the edge is delivering newer traffic while the hole goes
-    unfilled, i.e. a deletion attack turned into a visible abort instead of
-    a silent stall.
-- `seq` overflow (u64 max) → `SessionExhausted`, hard fail-closed; the only
-  recovery is a new signed-ephemeral handshake (new session, new keys).
-- `sid`, `from`, `to`, `contract` are all inside the AAD ⇒ cross-session or
+- The replay counter **is** the AEAD nonce (`0x00000000 ‖ u64be(seq)`);
+  directional keys rule out cross-direction nonce collision; sender monotonic
+  counter + receiver window make reuse detectable by construction.
+- Replay state lives **only in guardian memory**. A guardian restart voids all
+  sessions (`SessionExpired`); recovery is a fresh handshake. There are no
+  persisted counters to roll back.
+- Per direction, `high` = highest accepted seq:
+  - `seq == high+1` → accept.
+  - `seq <= high` → `ReplayRejected`: drop and audit (`duplicate` vs
+    `regression`), never an abort — duplicates are ordinary at-least-once
+    traffic; delivery stays exactly-once.
+  - `seq > high+1` → hold in the bounded queue (shared with contract holds,
+    capacity 64) and drain in order when the hole fills. Hard abort with
+    `SequenceGap` if the queue overflows (`HoldOverflow`) or newer traffic
+    arrives while the earliest hole persists — on an at-least-once edge an
+    unfilled hole means deletion, turned into a visible abort instead of a
+    silent stall.
+- `seq == u64::MAX` → `SessionExhausted`, fail closed; only a new handshake
+  recovers.
+- `sid`, `from`, `to`, `contract` are in the AAD ⇒ cross-session and
   cross-contract splices fail the tag.
-- Handshake nonces are fresh 32 random bytes inside both signatures; a
-  replayed handshake byte-for-byte yields a duplicate `sid` which is
-  ignored; `ts` is advisory only.
 
-## 8. Failure modes (all fail closed; envelope dropped; nothing decrypted)
+## 8. Verification pipeline and failure modes
 
-**Normative verification pipeline (F6 — accepted).** A received `msg`
-envelope is processed in exactly this order; the first failing step names
-the error:
+Normative order; the first failing step names the error. `high` advances only
+after step 7 succeeds.
 
 ```
 1. JSON schema          → SchemaViolation
 2. sid lookup           → SessionUnknown / SessionExpired
-3. route check          → IdentityMismatch      (from ≠ session peer OR to ≠ self)
-4. Ed25519 signature    → BadMessageSignature   (verify under pinned(from) BEFORE touching AEAD keys)
-5. seq window           → ReplayRejected (seq <= high) / gap-hold (F5) / SequenceGap
-6. AEAD open            → TamperDetected        (valid signature, failed tag: buggy or malicious pinned sender, or wrong key)
+3. route check          → IdentityMismatch   (from ≠ session peer OR to ≠ self)
+4. Ed25519 signature    → BadMessageSignature (BEFORE touching AEAD keys)
+5. seq window           → ReplayRejected / gap-hold / SequenceGap
+6. AEAD open            → TamperDetected
 7. TIER-2 contract      → ContractPending / ContractMismatch
 8. deliver
 ```
 
-`high` advances only after the AEAD open succeeds (step 6) — a failed open
-drops the envelope and awaits redelivery without advancing the window.
-
-| Error | Trigger | Meaning |
-|---|---|---|
-| `TamperDetected` | Poly1305 tag mismatch **after a valid signature** (step 6) | buggy/malicious pinned sender or key mismatch — *not* in-transit tampering, which fails at step 4 |
-| `IdentityMismatch` | `from` not pinned / handshake key ≠ pin / misroute: `from` ≠ session peer or `to` ≠ self (step 3, incl. **reflected** own envelopes) | impersonation or reflection |
-| `BadHandshakeSignature` | Ed25519 verify failure in hello/ack | impersonation / MITM |
-| `BadMessageSignature` | per-message Ed25519 verify failure | attributed forgery attempt |
-| `ReplayRejected` | seq <= high (duplicate/regression) | drop and audit, no abort (F3); exactly-once delivery |
-| `SequenceGap` | unfilled gap: hole persists while newer traffic arrives, or hold queue overflows | envelope-deletion attack; hard session abort (F5) — never a silent stall |
-| `ContractPending` | TIER-2 digest not yet observed | HOLD (§6), bounded queue |
-| `HoldOverflow` | hold queue (gap + contract-pending, shared) exceeds 64 envelopes | resource-exhaustion attack; session abort (F4) |
-| `ContractMismatch` | TIER-2 digest contradicts observed revision | confusion attempt; session abort |
-| `DowngradeDetected` | plaintext/unverifiable envelope in a HACP session whose peer policy is `require_secure` | strip-the-crypto attack; session abort |
-| `SessionUnknown` / `SessionExpired` / `SessionExhausted` | unknown `sid` / guardian restart / seq overflow | stale-forged envelope / memory-only state voided (F3) / nonce budget spent |
-| `SchemaViolation` | fails `spec/schemas/secure-envelope.json` | malformed / foreign object |
-| `GuardianUnavailable` | guardian unreachable | fail closed — no plaintext fallback |
-
-Errors surface to agents as strings; error paths never include key bytes,
-plaintext, or AEAD state.
-
-## 9. Wire policy and backward compatibility (challenge 4 — accepted)
-
-**Backward compatible at the agent-facing surface; strict at the wire.**
-
-- The `hacp` binary, `.hacp/` state, and every hacp-skill command
-  (start/join/propose/accept/poll/ask/answer/wait/submit/verify/close) are
-  untouched. Agents opt in per payload: `hacp-secure seal/open/send/recv`
-  move envelopes; the guardian does all crypto.
-- **Mode pinning is guardian policy, not TOFU (F1 — accepted)**: whether a
-  HACP session with a given peer is secured is decided by the guardian's
-  private `require_secure` pin for that peer (§3), set out-of-band at
-  provisioning. It is **never** inferred from what arrives first on the
-  edge — first-envelope pinning would let an attacker race a plaintext
-  envelope in and pin the session open. Under `require_secure: true`, any
-  plaintext or unverifiable envelope in a HACP session with that peer is
-  `DowngradeDetected` — a hard session abort, never a fallback. Stripping
-  crypto must be loud, not silent.
-- `GuardianUnavailable` fails closed: sealing/opening simply errors; no
-  plaintext path exists in the code.
-- An agent without HACP Secure sees only hex ciphertext on the file edge;
-  hacp semantics (digests, contracts, verification) operate above the layer
-  unchanged. Digest of a sealed artifact = digest of the envelope bytes.
-
-## 10. Implementation modules (phase 2 — after bilateral acceptance)
-
-| Module | Responsibility |
+| Error | Trigger |
 |---|---|
-| `src/secure/mod.rs` | public facade, `SecureError` taxonomy (§8) |
-| `src/secure/envelope.rs` | `SecureEnvelope` wire type, canonical header, AAD builder, schema conformance target |
-| `src/secure/crypto.rs` | pure primitives: X25519, Ed25519, HKDF-SHA256, ChaCha20-Poly1305 (deps: x25519-dalek 2, ed25519-dalek 2, chacha20poly1305 0.10, hkdf 0.12, sha2 0.10; zeroize on key types) |
-| `src/secure/session.rs` | handshake state machine, key schedule, per-direction seq window (§7), hold queue (§6), session pinning (§9) |
-| `src/secure/client.rs` | agent-side UDS client only — **no crypto dependencies, no key-store linkage** (nit 6 — accepted): the `hacp-secure` binary structurally cannot link key-store code |
-| `src/secure/guardian.rs` | identity + pinning stores incl. `require_secure` policy (guardian-uid only), seal/open/session service (**no raw sign API**), memory-only session state (F3), TIER-2 digest recomputation (F7), UDS server (0700 runtime dir), fail-closed request handling |
-| `src/bin/hacp-secure.rs` | agent-facing CLI client (seal/open/send/recv/session) |
-| `src/bin/hacp-secure-guardian.rs` | operator-facing daemon (init/provision/serve) |
+| `TamperDetected` | tag failure after a valid signature: buggy/malicious pinned sender or key mismatch (in-transit tampering fails at step 4) |
+| `IdentityMismatch` | unpinned/misrouted/reflected envelope |
+| `BadHandshakeSignature` / `BadMessageSignature` | handshake / message signature failure |
+| `ReplayRejected` | duplicate or regression (no abort) |
+| `SequenceGap` / `HoldOverflow` | deletion attack / queue overflow (abort) |
+| `ContractPending` / `ContractMismatch` | unobserved revision (hold) / contradiction (abort) |
+| `DowngradeDetected` | plaintext or unverifiable envelope in a `require_secure` session (abort) |
+| `SessionUnknown` / `SessionExpired` / `SessionExhausted` | stale sid / restart / nonce budget spent |
+| `SchemaViolation` | fails the wire schema |
+| `GuardianUnavailable` / `RateLimited` | guardian unreachable / per-minute budget spent — both fail closed |
 
-New Cargo deps are additive; no existing file's behavior changes.
+Error strings are fixed names plus non-secret detail; no path returns key
+bytes, plaintext, or AEAD state.
 
-## 11. Security argument sketch
+## 9. Wire policy and compatibility
 
-- **Confidentiality**: payload is plaintext only in guardian memory and the
-  local caller's stdout; on the edge it is AEAD ciphertext under ephemeral-DH
-  keys.
-- **Authenticity**: per-message tag under directional keys reachable only
-  behind a verified signed-ephemeral handshake from a pinned identity key;
-  plus a required per-message Ed25519 signature.
-- **Attribution/non-repudiation**: signature over AAD‖ct verifiable by any
-  holder of the pinned public key, independent of AEAD keys.
-- **Replay**: seq-as-nonce + strict high-water window + AAD-bound context
-  fields; replay state exists only in guardian memory, so there is no
-  counter an agent can roll back.
-- **Downgrade**: security mode comes from guardian-private `require_secure`
-  policy; any plaintext under that policy is a hard abort.
-- **Secrets outside LLM context**: private keys exist only in guardian
-  process memory / 0600 keyfile outside the project (dedicated uid in
-  standard mode); no guardian command outputs them; the agent-facing surface
-  is ciphertext-only, so no prompt injection can make a tool *return* key
-  material — there is no such tool. Filesystem-reading injections are covered
-  only by the §1 mechanism table.
+- The `hacp` binary, `.hacp/` state, and all hacp-skill commands are
+  untouched. Agents opt in per payload via `hacp-secure send/recv`.
+- Security mode is **guardian policy, not TOFU**: `require_secure` comes from
+  the private pin, never inferred from arriving traffic (a plaintext race
+  cannot pin a session open). Under `require_secure: true`, any plaintext or
+  unverifiable envelope is `DowngradeDetected` — hard abort, never fallback.
+- `GuardianUnavailable` fails closed; no plaintext code path exists.
+- An agent without HACP Secure sees only hex ciphertext; hacp semantics above
+  the layer are unchanged. Digest of a sealed artifact = digest of the
+  envelope bytes.
 
-## 12. Known limitations (accepted for MVP)
+## 10. Known limitations
 
-1. Degraded (same-uid) mode reduces key protection to context hygiene —
-   documented residual risk (§1), must be labeled at startup.
-2. File-edge metadata is public, including authorship via per-message
-   signatures (non-goal: metadata confidentiality).
-3. No revocation — compromise requires operator re-provisioning of both
-   peers' pinning stores.
-4. Gap tolerance is bounded: at most 64 outstanding held envelopes; a
-   deletion attack aborts the session loudly (`SequenceGap`) rather than
-   stalling it silently (F5); no rekey in MVP.
-5. HOLD queue (§6) defers delivery but never decrypts-and-holds across a
-   contract contradiction; contradictions abort.
+1. Degraded mode reduces key protection to context hygiene (labeled, not silent).
+2. Edge metadata is public: URNs, sizes, timing, authorship (NG — metadata
+   confidentiality, traffic analysis).
+3. No revocation or post-compromise security; compromise requires operator
+   re-provisioning of both pin stores.
+4. Gap tolerance bounded at 64 held envelopes; deletion aborts loudly; no rekey.
+5. Contract holds defer delivery but contradictions always abort.
