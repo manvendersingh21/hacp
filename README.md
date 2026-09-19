@@ -237,7 +237,8 @@ guarantees and the explicit same-UID degraded mode used by the
 [local demo](docs/hacp-secure-local-demo.md). Optional Wasmer sandbox execution
 and Tenki deployment demonstrators live under `infra/` and are described in
 [docs/hacp-wasmer-integration.md](docs/hacp-wasmer-integration.md) and
-[docs/hacp-secure-tenki-demo.md](docs/hacp-secure-tenki-demo.md).
+[docs/hacp-secure-tenki-demo.md](docs/hacp-secure-tenki-demo.md). A full
+documentation index with reading order is in [docs/README.md](docs/README.md).
 
 ## Validate and package independently
 

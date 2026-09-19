@@ -17,6 +17,16 @@ cargo run --locked --example bilateral
 cargo doc --locked --no-deps
 ```
 
+The optional HACP Secure layer adds a second matrix. Its key-free surface
+(client, workflow, envelope schema) builds with default features; the
+guardian, crypto, and transport require the `guardian` feature. Run both
+before proposing a change that touches `src/secure/`:
+
+```sh
+cargo test --locked --all-features
+cargo build --locked --features guardian
+```
+
 These checks need no model accounts, API keys, running services, or HIVE checkout.
 The initial build downloads Rust dependencies. CI repeats the checks on Linux
 and macOS. Build and test output should contain no warnings.
@@ -27,6 +37,13 @@ and macOS. Build and test output should contain no warnings.
 - Include a minimal reproduction and a regression test with a bug fix.
 - Root modules implement frozen HACP/1.1; `hacp::v2` implements the separate
   HACP/2.0 draft. Cargo package versions and wire versions are different concepts.
+- `src/secure/` implements the optional HACP Secure layer. Its wire schema
+  `spec/schemas/secure-envelope.json` is hand-authored and frozen: it is not
+  emitted by `emit-schemas` and changes to it are protocol changes. Keep
+  `SecureError` fixed and non-secret — no variant may carry key bytes,
+  plaintext, or library state — and keep key custody compiled only under the
+  `guardian` feature. New cryptography dependencies require a feature gate
+  and an issue first.
 - Do not introduce dependencies on a vendor, CLI, async runtime, database,
   transport client, or HIVE crate.
 - Update the normative specification when changing wire semantics. Describe
@@ -36,7 +53,10 @@ and macOS. Build and test output should contain no warnings.
 - Preserve the independent Python peer's information barrier: implement its
   behavior from specifications, schemas, and fixtures, not the Rust internals.
 - Review golden transcript changes as protocol changes, not snapshot cleanup.
-  Never claim a test passed if it was skipped or not executed.
+  Never claim a test passed if it was skipped or not executed. A test that
+  cannot run in degraded (same-UID) mode must report `SKIP(degraded)`, never
+  pass silently; see the conventions in
+  [docs/hacp-secure-test-matrix.md](docs/hacp-secure-test-matrix.md).
 
 Keep credentials, personal home paths, machine inventories, and live private
 transcripts out of commits. Use neutral participant identities in examples.

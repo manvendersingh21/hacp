@@ -14,6 +14,11 @@
 - Document integration, upgrade, and rollback in
   `docs/hacp-secure-integration.md`; add security architecture, trust
   boundary, threat model, module, test-matrix, and demo documentation.
+- Add a documentation index (`docs/README.md`); document the secure layer's
+  development workflow in `CONTRIBUTING.md` (guardian feature test matrix,
+  frozen-schema and fixed-error rules, `SKIP(degraded)` convention), its
+  boundaries and reporting scope in `SECURITY.md`, and its test entry points
+  in `docs/TESTING-YOUR-PROTOCOL.md`.
 
 ## 1.1.1
 

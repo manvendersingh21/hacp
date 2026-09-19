@@ -158,9 +158,20 @@ cargo test -p hacp
 # L4 — the leak test (reference ↔ independent peer):
 cargo test --test v2_interop -- --nocapture
 
+# HACP Secure layer — key-free surface, then the full guardian stack:
+cargo test --locked --test secure_workflow --test secure_envelope
+cargo test --locked --all-features
+
 # L5 runs in a consuming runtime, not in this library checkout.
 # Follow HIVE's distributed collaboration guide for an authorized live run.
 
 # The full gate:
 cargo build --workspace && cargo test --workspace
 ```
+
+The optional HACP Secure layer extends this playbook with its own matrix —
+test IDs mapped to guarantees, canary scans for secret leakage into
+agent-reachable output, and an explicit `SKIP(degraded)` convention for tests
+that need a dedicated guardian UID. It is tracked separately in
+[hacp-secure-test-matrix.md](hacp-secure-test-matrix.md) so the core L0–L5
+tables above stay protocol-only.
