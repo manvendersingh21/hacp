@@ -56,7 +56,7 @@ and macOS. Build and test output should contain no warnings.
   Never claim a test passed if it was skipped or not executed. A test that
   cannot run in degraded (same-UID) mode must report `SKIP(degraded)`, never
   pass silently; see the conventions in
-  [docs/hacp-secure-test-matrix.md](docs/hacp-secure-test-matrix.md).
+  [docs/hacp-secure.md](docs/hacp-secure.md) §14.
 
 Keep credentials, personal home paths, machine inventories, and live private
 transcripts out of commits. Use neutral participant identities in examples.

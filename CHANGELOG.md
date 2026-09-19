@@ -26,6 +26,17 @@
   frozen-schema and fixed-error rules, `SKIP(degraded)` convention), its
   boundaries and reporting scope in `SECURITY.md`, and its test entry points
   in `docs/TESTING-YOUR-PROTOCOL.md`.
+- Reduce documentation to what is needed: one canonical spec
+  (`docs/hacp-secure.md`: architecture, trust boundaries, threat model,
+  non-goals, module interfaces, test matrix), one integration guide
+  (`docs/hacp-secure-integration.md`), and one demos doc
+  (`docs/hacp-secure-demos.md`). Drops the separate architecture/threat/
+  modules/matrix/demo files, the docs index, and the extraction/validation
+  narratives. All normative content and test/threat IDs are retained.
+- Add Mermaid architecture diagrams across the spec and demos docs:
+  deployment with trust zones, handshake sequence, verification pipeline,
+  TIER-2 binding and replay-window decision flows, feature-gated module
+  graph, skill adapter flow, and the Wasmer execution sequence.
 
 ## 1.1.1
 

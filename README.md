@@ -229,16 +229,11 @@ live only in a per-agent `hacp-secure-guardian` daemon (built with
 
 Start with the [integration and upgrade guide](docs/hacp-secure-integration.md)
 for compatibility details and required setup (guardian deployment, the
-hacp-skill patch, and the private `HACP_SECURE_STATE` directory). The
-[security architecture](docs/security-architecture.md),
-[trust boundary](docs/trust-boundary.md), and
-[threat model](docs/hacp-secure-threat-model.md) documents define the
-guarantees and the explicit same-UID degraded mode used by the
-[local demo](docs/hacp-secure-local-demo.md). Optional Wasmer sandbox execution
-and Tenki deployment demonstrators live under `infra/` and are described in
-[docs/hacp-wasmer-integration.md](docs/hacp-wasmer-integration.md) and
-[docs/hacp-secure-tenki-demo.md](docs/hacp-secure-tenki-demo.md). A full
-documentation index with reading order is in [docs/README.md](docs/README.md).
+hacp-skill patch, and the private `HACP_SECURE_STATE` directory). The full
+spec — security architecture, trust boundaries, threat model, non-goals,
+module interfaces, and test matrix — is [docs/hacp-secure.md](docs/hacp-secure.md),
+and the demonstrators (local, Wasmer sandbox, Tenki) are in
+[docs/hacp-secure-demos.md](docs/hacp-secure-demos.md).
 
 ## Validate and package independently
 
@@ -262,7 +257,6 @@ Standalone validation on 2026-09-07: a fresh public clone passed **146 tests,
 zero failures, zero skips**. The isolated Cargo package passed the same suite.
 The exact Rust example in this README also compiled and ran in a separate
 application with **zero HIVE packages** in its resolved dependency graph.
-See the [validation record](docs/STANDALONE-VALIDATION.md) for commands and scope.
 
 ## Contributing and support
 
