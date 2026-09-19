@@ -44,6 +44,23 @@ Agent A -> hacp CLI -> key-free Workflow IPC -> Guardian A
         -> key-free Workflow IPC -> hacp CLI -> Agent B
 ```
 
+```mermaid
+flowchart LR
+    subgraph HA["HOST A"]
+        CA["hacp CLI (skill)"] <-->|"key-free workflow IPC<br/>send · receive"| GA["Guardian A"]
+    end
+    subgraph HB["HOST B"]
+        GB["Guardian B"] <-->|"key-free workflow IPC"| CB["hacp CLI (skill)"]
+    end
+    GA <==>|"encrypted envelopes only<br/>(hello · ack · msg)"| GB
+    subgraph PRIV["private, outside the project — HACP_SECURE_STATE"]
+        RA["A: receipts · staged outgoing"]
+        RB["B: receipts · staged outgoing"]
+    end
+    GA -.-> RA
+    GB -.-> RB
+```
+
 Operator environment per agent (state dir must pre-exist, be owned by the
 agent UID, mode 0700, outside the shared project; secure mode is chosen at
 session start, plaintext sessions are not migrated; anything missing fails
@@ -79,13 +96,26 @@ changes — the bridge uses only existing guardian socket verbs and links
 `hacp` **without** the `guardian` feature (an acceptance check fails if any
 crypto crate appears in its dependency tree).
 
-```
-Agent A ── hacp-exec ──seal(binding)──► Guardian A ──► encrypted edge
-Guardian B: verify, decrypt, check session + binding
-  → hacp-exec-guardian (key-free): authorize against operator policy
-  → ExecutionRequest (approved fields only)
-  → wasmer run (env cleared, /work only, no net unless granted)
-  → ExecutionResult ──seal(same binding)──► Guardian A → hacp-exec → Agent A
+```mermaid
+sequenceDiagram
+    autonumber
+    participant A as hacp-exec (A, key-free)
+    participant GA as Guardian A
+    participant E as encrypted edge
+    participant GB as Guardian B
+    participant SV as hacp-exec-guardian (B, key-free)
+    participant W as Wasmer sandbox
+    A->>GA: seal(sandbox.execution.request, contract = frozen digest)
+    GA->>E: msg envelope
+    E->>GB: scan
+    GB->>SV: open — only if signature, session,<br/>routing, replay window, and binding<br/>match the frozen contract
+    SV->>SV: authorize vs operator policy<br/>(requester allowlist · package · timeout ·<br/>output · files · env · network)
+    SV->>W: ExecutionRequest only (env cleared, /work,<br/>no network unless granted, HACP_* refused)
+    W-->>SV: exit code · stdout · stderr
+    SV->>GB: seal(sandbox.execution.result, same binding)
+    GB->>E: msg envelope
+    E->>GA: scan
+    GA-->>A: open — accepted only if it answers the request<br/>and carries the same binding
 ```
 
 Guardian B refuses delivery on a binding mismatch; Guardian A refuses to seal

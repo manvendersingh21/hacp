@@ -33,20 +33,49 @@ untrusted: everything an agent can see is public and injectable.
 | File edge (`.hacp-secure/`) | No | Best-effort, at-least-once delivery |
 | Operator | Yes, at provisioning | Identity provisioning; not content |
 
+```mermaid
+flowchart TB
+    subgraph OP["OPERATOR — out-of-band · trusted for identity only"]
+        direction LR
+        INIT["guardian init:<br/>Ed25519 keypair generated<br/>inside each guardian"] --> PIN["compare fingerprints out-of-band,<br/>pin {urn, ed25519_pub, require_secure}"]
+    end
+    subgraph HOSTA["HOST A"]
+        A1["Agent A (LLM context)<br/>UNTRUSTED · injectable<br/>ciphertext-only view"]
+        G1["Guardian A — TRUST KERNEL<br/>dedicated uid (standard mode)<br/>sk_a · pins · replay state · audit"]
+        A1 <-->|"UDS · allowlisted verbs<br/>session · seal · open · status · fingerprint"| G1
+    end
+    subgraph HOSTB["HOST B"]
+        B1["Agent B (LLM context)<br/>UNTRUSTED · injectable<br/>ciphertext-only view"]
+        G2["Guardian B — TRUST KERNEL<br/>dedicated uid (standard mode)<br/>sk_b · pins · replay state · audit"]
+        B1 <-->|"UDS · allowlisted verbs"| G2
+    end
+    subgraph EDGE["UNTRUSTED shared file edge — project/.hacp-secure/"]
+        direction LR
+        E1[("hello · ack envelopes")]
+        E2[("msg envelopes<br/>.hacp-secure/sid/seq-from.json")]
+    end
+    PIN -.->|"peers.json outside the project,<br/>guardian-writable only"| G1
+    PIN -.-> G2
+    G1 ==>|"write ciphertext"| E2
+    G1 ==>|"write handshake"| E1
+    E2 ==>|"read"| G2
+    E1 ==>|"read + answer ack"| G1
+    G2 ==>|"write ciphertext"| E2
+    classDef untrusted fill:#fee,stroke:#c33,color:#900
+    classDef kernel fill:#efe,stroke:#3a3,color:#060
+    class A1,B1,E1,E2 untrusted
+    class G1,G2 kernel
 ```
- operator (out-of-band): init keys inside guardians, exchange pinned
-   public keys by fingerprint → peers.json OUTSIDE the project
-        │ pin                                 │ pin
-        ▼                                     ▼
- AGENT A (untrusted, injectable)        AGENT B (untrusted, injectable)
-   │ UDS: seal/open/session               ▲ UDS
-   ▼                                      │
- GUARDIAN A (trust kernel, own uid)     GUARDIAN B
-   │ ciphertext only                       ▲
-   ▼                                       │
- ══ UNTRUSTED SHARED FILE EDGE (.hacp-secure/) ══
-   no keys, no pins, no counters persist here
-```
+
+Attacker view of the edge (all mitigated, §12): an **observer** reads
+ciphertext only · a **writer/injector** fails signature or tag · a
+**replayer** hits the seq window (state is guardian-memory-only, so edge
+tampering cannot roll it back) · **deletion** becomes a loud `SequenceGap`
+abort · **stripping crypto** under `require_secure` is a `DowngradeDetected`
+abort. No keys, pins, or counters ever persist on the edge.
+
+In degraded mode the uid wall around each guardian is absent — protection
+reduces to context hygiene, and the guardian labels it at startup.
 
 Boundary rules: (1) everything in an LLM context is public — the agent-facing
 surface contains no key material, so no tool call can *return* a secret;
@@ -96,6 +125,22 @@ forward secrecy (ephemeral DH only). Replayed/flooded hellos are bounded:
 **at most 4 pending sessions per peer** (oldest evicted); an evicted hello
 fails at the first `msg` and must re-run.
 
+```mermaid
+sequenceDiagram
+    autonumber
+    participant A as Guardian A (initiator)
+    participant E as File edge (.hacp-secure/handshakes/)
+    participant B as Guardian B (responder)
+    A->>E: hello { epub: e_a_pub, nonce: n_a,<br/>sig = sk_a("HACP-SECURE/v1/hello" ‖ hacp_session ‖ urn_a ‖ urn_b ‖ e_a_pub ‖ n_a) }
+    E->>B: scan
+    Note right of B: verify sig under pinned(urn_a)<br/>else BadHandshakeSignature / IdentityMismatch<br/>pending sessions ≤ 4 per peer
+    B->>E: ack { sid, epub: e_b_pub, nonce: n_b,<br/>sig = sk_b("HACP-SECURE/v1/ack" ‖ hacp_session ‖ urn_b ‖ urn_a ‖ e_a_pub ‖ n_a ‖ e_b_pub ‖ n_b) }
+    E->>A: scan
+    Note left of A: verify sig under pinned(urn_b)
+    Note over A,B: both derive: ikm = X25519(e_priv, e_pub_peer)<br/>salt = n_a ‖ n_b · ctx = "HACP-SECURE/v1/session" ‖ hacp_session ‖ urns<br/>sid, k_i2r, k_r2i = HKDF-SHA256(ikm, salt, ctx ‖ label)
+    Note over A,B: established — directional keys, seq starts at 0 per direction
+```
+
 ## 5. SecureEnvelope
 
 JSON, canonical per HACP v2 rules; the canonical header (minus `ct`/`sig`) is
@@ -144,6 +189,22 @@ keys; non-repudiation is in scope). Envelopes are written to
 | Not yet observed | **HOLD** (`ContractPending`) in the bounded queue; re-evaluated per observation; dropped at close |
 | Contradicts a different observed revision | `ContractMismatch` → hard abort |
 
+```mermaid
+flowchart TD
+    IN["msg envelope, contract field in AAD"] --> OBS{"guardian recomputes<br/>digest of every observed<br/>.hacp record (SHA-256 of canonical<br/>contract_id, revision, content)"}
+    OBS -- "record inconsistent" --> ABORT2["ContractMismatch — abort"]
+    OBS -- "no frozen revision yet<br/>(proposed / countered)" --> BS{"contract == '' ?"}
+    BS -- yes --> DELIVER["bootstrap: deliver"]
+    BS -- no --> HOLD2["ContractPending — hold<br/>(queue ≤ 64, shared with gap holds)"]
+    OBS -- "revision frozen" --> MATCH{"claimed digest<br/>vs observed"}
+    MATCH -- "matches current frozen" --> DELIVER
+    MATCH -- "equals a superseded revision" --> ABORT2
+    MATCH -- "different frozen revision" --> ABORT2
+    MATCH -- "not yet observed locally" --> HOLD2
+    HOLD2 -->|"revision appears at next observation"| DELIVER
+    HOLD2 -->|"session closes"| DROP["drop"]
+```
+
 Trust source, honestly: the guardian observes "frozen revision" in `.hacp/`,
 which a same-uid agent can rewrite. It recomputes every digest as SHA-256
 over canonical `{contract_id, revision, content}` before trusting a record,
@@ -168,6 +229,19 @@ bilateral consent. Control-plane authenticity is a non-goal (NG-5).
 - `seq == u64::MAX` → `SessionExhausted`; only a new handshake recovers.
 - `sid`, `from`, `to`, `contract` are in the AAD ⇒ splices fail the tag.
 
+```mermaid
+flowchart TD
+    M["inbound msg (signature already verified)"] --> CMP{"seq vs high+1"}
+    CMP -- "seq == high+1" --> OK["proceed to AEAD open · on success high = seq"]
+    CMP -- "seq ≤ high" --> REJ["ReplayRejected — drop + audit<br/>(duplicate or regression)<br/>never an abort · high unchanged"]
+    CMP -- "seq &gt; high+1 (gap)" --> Q{"hold queue"}
+    Q -- "size ≥ 64" --> OV["HoldOverflow — abort"]
+    Q -- "ok" --> HD["hold ciphertext by seq"]
+    HD -->|"missing seq arrives"| DRAIN["decrypt + deliver in order · exactly once"]
+    HD -->|"newer-than-all-held arrives<br/>while earliest hole persists"| GAP["SequenceGap — abort<br/>(unfilled hole = deletion)"]
+    OK --> ADV["high = seq only after AEAD tag verifies;<br/>failed open drops without advancing"]
+```
+
 ## 8. Verification pipeline and errors
 
 Normative order; the first failing step names the error. `high` advances only
@@ -191,6 +265,36 @@ per-minute request budget is `RateLimited`; guardian unreachability is
 *after* a valid signature (buggy/malicious pinned sender or key mismatch;
 in-transit tampering fails at step 4). Error strings are fixed names plus
 non-secret detail; no path returns key bytes, plaintext, or AEAD state.
+
+```mermaid
+flowchart TD
+    REQ["socket request or edge file"] --> RB{"rate budget<br/>(600/min rolling, all requests)"}
+    RB -- "spent" --> RL["RateLimited — fixed name only"]
+    RB -- ok --> S1{"1 · schema"}
+    S1 -- fail --> E1["SchemaViolation"]
+    S1 -- pass --> S2{"2 · sid known?"}
+    S2 -- "no / expired" --> E2["SessionUnknown · SessionExpired"]
+    S2 -- yes --> S3{"3 · from = session peer<br/>AND to = self?"}
+    S3 -- no --> E3["IdentityMismatch"]
+    S3 -- yes --> S4{"4 · Ed25519 sig over<br/>msg-domain ‖ aad ‖ ct<br/>under pinned key"}
+    S4 -- fail --> E4["BadMessageSignature"]
+    S4 -- pass --> S5{"5 · seq window<br/>(§7)"}
+    S5 -- "≤ high" --> E5["ReplayRejected"]
+    S5 -- "gap / overflow" --> E5b["hold · SequenceGap · HoldOverflow"]
+    S5 -- "high+1" --> S6{"6 · ChaCha20-Poly1305 open<br/>with directional key"}
+    S6 -- "tag fail" --> E6["TamperDetected"]
+    S6 -- ok --> S7{"7 · TIER-2 contract<br/>(§6)"}
+    S7 -- "unobserved" --> E7["ContractPending — hold"]
+    S7 -- contradiction --> E7b["ContractMismatch — abort"]
+    S7 -- matches --> OUT["8 · deliver · high = seq"]
+    PL["plaintext object in<br/>require_secure session"] --> DD["DowngradeDetected — abort<br/>(before the pipeline)"]
+    classDef drop fill:#ffd,stroke:#996
+    classDef abort fill:#fdd,stroke:#c33
+    classDef okc fill:#dfd,stroke:#3a3
+    class E1,E2,E3,E4,E5,E6 drop
+    class E5b,E7,E7b,DD,RL abort
+    class OUT okc
+```
 
 ## 9. Wire policy and compatibility
 
@@ -218,6 +322,37 @@ hacp-secure-guardian ──► guardian ──► session ──► crypto
                              │           │
                              └───────────┴──► envelope
 ```
+
+```mermaid
+flowchart LR
+    subgraph KF["key-free surface — default cargo features"]
+        CLI["src/bin/hacp-secure.rs<br/>agent CLI"]
+        WF["secure/workflow.rs<br/>skill adapter"]
+        CL["secure/client.rs<br/>UDS client"]
+        ENV["secure/envelope.rs<br/>wire type · schema · AAD"]
+        CLI --> WF --> CL
+        CLI --> ENV
+    end
+    subgraph GO["secret-holding surface — --features guardian"]
+        BIN["src/bin/hacp-secure-guardian.rs<br/>operator daemon"]
+        G["secure/guardian.rs<br/>keys · pins · rate budget ·<br/>edge I/O · observer · audit"]
+        S["secure/session.rs<br/>window · holds · pipeline"]
+        X["secure/crypto.rs<br/>X25519 · HKDF · AEAD · Ed25519"]
+        BIN --> G --> S --> X
+    end
+    G --> ENV
+    S --> ENV
+    CL -.->|"JSON lines over UDS<br/>session · seal · open · status · fingerprint<br/>peer-UID ACL + per-minute budget"| G
+    classDef kf fill:#dff,stroke:#369
+    classDef go fill:#efd,stroke:#3a3
+    class CLI,WF,CL,ENV kf
+    class BIN,G,S,X go
+```
+
+The dashed edge is the only crossing: the compiler-enforced rule is that
+`client`/`workflow`/`envelope` never import `guardian`, `session`, or
+`crypto`, so the agent binary structurally cannot contain key-store code
+(INV-2, T-40).
 
 | Module | Secrets | Responsibility |
 |---|---|---|

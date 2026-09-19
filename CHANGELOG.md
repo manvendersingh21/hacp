@@ -33,6 +33,10 @@
   (`docs/hacp-secure-demos.md`). Drops the separate architecture/threat/
   modules/matrix/demo files, the docs index, and the extraction/validation
   narratives. All normative content and test/threat IDs are retained.
+- Add Mermaid architecture diagrams across the spec and demos docs:
+  deployment with trust zones, handshake sequence, verification pipeline,
+  TIER-2 binding and replay-window decision flows, feature-gated module
+  graph, skill adapter flow, and the Wasmer execution sequence.
 
 ## 1.1.1
 
