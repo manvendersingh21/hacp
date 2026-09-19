@@ -20,6 +20,9 @@ jobs:
       - run: cargo build --locked
       - run: cargo test --locked --no-run
       - run: cargo test --locked
+      # HACP Secure layer: guardian binary and the full crypto/transport stack.
+      - run: cargo build --locked --features guardian
+      - run: cargo test --locked --all-features
       - run: cargo run --locked --example bilateral
       - run: cargo doc --locked --no-deps
       - run: cargo package --locked

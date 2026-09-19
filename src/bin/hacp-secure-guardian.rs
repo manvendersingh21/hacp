@@ -30,6 +30,7 @@ fn run() -> Result<(), SecureError> {
             "--project",
             "--socket",
             "--agent-uid",
+            "--rate-per-minute",
         ]
         .contains(&k.as_str())
         {
@@ -72,6 +73,12 @@ fn run() -> Result<(), SecureError> {
             };
             let mut guardian =
                 Guardian::load(&store, &PathBuf::from(required("--project")?), mode)?;
+            if let Some(value) = opts.get("--rate-per-minute") {
+                let cap: u32 = value
+                    .parse()
+                    .map_err(|_| SecureError::SchemaViolation)?;
+                guardian.set_rate_per_minute(cap)?;
+            }
             guardian.serve(&PathBuf::from(required("--socket")?))?;
         }
         _ => return Err(SecureError::UnknownOperation),

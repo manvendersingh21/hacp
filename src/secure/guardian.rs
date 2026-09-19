@@ -28,6 +28,35 @@ use std::{
 };
 use zeroize::Zeroizing;
 const LIMIT: u64 = 16 * 1024 * 1024;
+/// Default guardian request budget: operations per rolling 60-second window.
+pub const DEFAULT_RATE_PER_MINUTE: u32 = 600;
+/// Fixed-window per-minute request budget. One budget per guardian daemon spans
+/// every authorized connection; the cap counts rejected and unknown operations
+/// too, so error floods cannot bypass it. No state beyond (start, count).
+#[derive(Clone, Copy)]
+struct RateBudget {
+    cap: u32,
+    window: Option<(std::time::Instant, u32)>,
+}
+impl RateBudget {
+    fn new(cap: u32) -> Self {
+        Self { cap, window: None }
+    }
+    fn permit(&mut self) -> bool {
+        let now = std::time::Instant::now();
+        if let Some((start, count)) = self.window {
+            if now.duration_since(start) < Duration::from_secs(60) {
+                if count >= self.cap {
+                    return false;
+                }
+                self.window = Some((start, count + 1));
+                return true;
+            }
+        }
+        self.window = Some((now, 1));
+        true
+    }
+}
 fn io_error(_: impl std::fmt::Debug) -> SecureError {
     SecureError::GuardianUnavailable
 }
@@ -178,6 +207,7 @@ pub struct Guardian {
     local: String,
     mode: Mode,
     blocked: BTreeSet<String>,
+    rate: RateBudget,
 }
 impl Guardian {
     /// The operator chooses trusted store/runtime paths outside the hostile project.
@@ -225,9 +255,26 @@ impl Guardian {
             local: cfg.urn,
             mode,
             blocked: BTreeSet::new(),
+            rate: RateBudget::new(DEFAULT_RATE_PER_MINUTE),
         })
     }
+    /// Operator-configurable request cap per rolling 60-second window. Zero is
+    /// refused: an unbounded guardian is a configuration error, not a mode.
+    pub fn set_rate_per_minute(&mut self, cap: u32) -> Result<(), SecureError> {
+        if cap == 0 {
+            return Err(SecureError::SchemaViolation);
+        }
+        self.rate = RateBudget::new(cap);
+        Ok(())
+    }
     pub fn handle_bytes(&mut self, bytes: &[u8]) -> Value {
+        // Rate is checked before parsing and before op allowlisting: malformed
+        // or unknown-op floods consume the same budget as valid work.
+        if !self.rate.permit() {
+            let e = SecureError::RateLimited;
+            self.audit(e, None);
+            return json!({"ok":false,"error":e,"detail":e.to_string()});
+        }
         match self.dispatch(bytes) {
             Ok(v) => v,
             Err(e) => {
@@ -852,7 +899,12 @@ impl Guardian {
         // Mode is explicit at startup. Standard connect ACLs are provisioned by the operator.
         eprintln!("HACP Secure guardian mode={}", self.mode.label());
         for stream in listener.incoming() {
-            let mut stream = stream.map_err(io_error)?;
+            // A transient accept failure (EMFILE, ECONNABORTED) must not kill a
+            // guardian mid-session; the next connection retries.
+            let mut stream = match stream {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
             if !self.authorized_stream(&stream) {
                 continue;
             }
@@ -946,6 +998,43 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.root);
         }
+    }
+    #[test]
+    fn rate_limit_caps_all_operations_and_recovers_next_window() {
+        let fixture = Fixture::new();
+        let mut g = fixture.guardian();
+        g.set_rate_per_minute(2).unwrap();
+        let probe = json!({"op":"fingerprint"}).to_string();
+        assert_eq!(g.handle_bytes(probe.as_bytes())["ok"], true);
+        // Malformed and unknown-op floods consume the same budget.
+        assert_eq!(
+            g.handle_bytes(br#"{"op":"status","extra":1}"#)["error"],
+            "SchemaViolation"
+        );
+        let limited = g.handle_bytes(probe.as_bytes());
+        assert_eq!(limited["error"], "RateLimited");
+        assert_eq!(limited["detail"], "RateLimited");
+        // Fixed shape only: no request echo, no counters, no budget details.
+        assert_eq!(limited.as_object().unwrap().len(), 3);
+        // A rolled-over window admits traffic again.
+        let past = std::time::Instant::now()
+            .checked_sub(Duration::from_secs(61))
+            .expect("monotonic clock with >61s uptime");
+        g.rate.window = Some((past, 2));
+        assert_eq!(g.handle_bytes(probe.as_bytes())["ok"], true);
+    }
+    #[test]
+    fn rate_limit_refuses_unbounded_configuration() {
+        let fixture = Fixture::new();
+        let mut g = fixture.guardian();
+        assert_eq!(
+            g.set_rate_per_minute(0),
+            Err(SecureError::SchemaViolation)
+        );
+        g.set_rate_per_minute(1).unwrap();
+        let probe = json!({"op":"fingerprint"}).to_string();
+        assert_eq!(g.handle_bytes(probe.as_bytes())["ok"], true);
+        assert_eq!(g.handle_bytes(probe.as_bytes())["error"], "RateLimited");
     }
     #[test]
     fn strict_operations_and_key_output_hygiene() {

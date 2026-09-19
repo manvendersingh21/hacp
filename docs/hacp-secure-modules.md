@@ -98,7 +98,15 @@ T-03, which enumerates candidate names.
 |---|---|
 | `init --agent <urn>` | Generate the Ed25519 identity inside the guardian and write the 0600 keyfile. Prints only the fingerprint |
 | `pin --peer <urn> --pub <hex> --require-secure <true\|false>` | Add a pin after out-of-band fingerprint confirmation |
-| `serve [--degraded]` | Start the socket server; refuses to start same-uid without `--degraded` and prints the degraded-mode banner |
+| `serve [--degraded] [--rate-per-minute <n>]` | Start the socket server; refuses to start same-uid without `--degraded` and prints the degraded-mode banner |
+
+`serve` enforces a rolling 60-second request budget per guardian daemon,
+defaulting to 600 operations per minute (`--rate-per-minute` to change; zero is
+refused). The budget spans every authorized connection and counts malformed
+and unknown-operation requests too, so error floods cannot bypass it. A spent
+budget returns the fixed `RateLimited` error — name only, no counters or
+request echoes — and is recorded in `audit.jsonl`. Transient socket accept
+failures are skipped rather than terminating the daemon.
 
 ### 3.4 Library surface (Rust signatures, indicative)
 

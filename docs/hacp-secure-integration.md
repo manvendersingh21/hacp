@@ -97,7 +97,9 @@ cargo build --locked --features guardian
 
 Run one `hacp-secure-guardian` daemon per agent under a private socket
 directory owned by that agent's UID. The agent-facing `hacp-secure` CLI talks
-to it over a Unix stream socket; agents never see keys. Set on each agent's
+to it over a Unix stream socket; agents never see keys. Each daemon enforces a
+rolling per-minute request budget (default 600 operations/minute; override
+with `--rate-per-minute`, which refuses zero). Set on each agent's
 environment:
 
 ```sh

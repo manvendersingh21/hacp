@@ -7,6 +7,13 @@
   Cargo feature, plus the `hacp-secure` agent CLI and the frozen
   `spec/schemas/secure-envelope.json` schema. Default builds, wire formats,
   and existing APIs are unchanged.
+- Enforce a rolling per-minute request budget in the guardian daemon
+  (default 600 operations/minute, `--rate-per-minute` to override, zero
+  refused). The budget spans all authorized connections, counts malformed
+  and unknown-operation requests, and returns the fixed `RateLimited`
+  error; transient socket accept failures no longer terminate the daemon.
+- CI now builds the `guardian` feature and runs `cargo test --all-features`,
+  covering the crypto, transport, and guardian suites on Linux and macOS.
 - Add optional Wasmer sandbox execution and Tenki deployment demonstrators
   under `infra/`, and reproducible demo scripts under `scripts/`.
 - Add the hacp-skill secure adapter patch under `integrations/hacp-skill/`.

@@ -46,6 +46,8 @@ pub enum SecureError {
     ContractMismatch,
     #[error("GuardianUnavailable")]
     GuardianUnavailable,
+    #[error("RateLimited")]
+    RateLimited,
     #[error("UnknownOperation")]
     UnknownOperation,
 }
