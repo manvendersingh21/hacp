@@ -5,3 +5,8 @@ __pycache__/
 .env
 .env.*
 *.log
+
+# HACP runtime state (agent sessions, inboxes, artifacts, verification logs)
+.hacp/
+.hacp-history/
+*.log

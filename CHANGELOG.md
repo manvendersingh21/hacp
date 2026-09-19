@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- Add the optional HACP Secure layer: guardian-held key custody, secure
+  envelope transport, signatures, and replay protection behind a `guardian`
+  Cargo feature, plus the `hacp-secure` agent CLI and the frozen
+  `spec/schemas/secure-envelope.json` schema. Default builds, wire formats,
+  and existing APIs are unchanged.
+- Add optional Wasmer sandbox execution and Tenki deployment demonstrators
+  under `infra/`, and reproducible demo scripts under `scripts/`.
+- Add the hacp-skill secure adapter patch under `integrations/hacp-skill/`.
+- Stop tracking `.hacp/` runtime state; ignore `.hacp/` and `.hacp-history/`.
+- Document integration, upgrade, and rollback in
+  `docs/hacp-secure-integration.md`; add security architecture, trust
+  boundary, threat model, module, test-matrix, and demo documentation.
+
 ## 1.1.1
 
 - Add regression coverage proving nested canonical contract content binds bilateral acceptance, frozen revision digests, and amendments; stale submissions are rejected after an amendment.
