@@ -12,7 +12,7 @@ What merging `feat/hacp-secure` changes, and what operators must do.
 | Tests | `tests/secure_{envelope,transport,workflow}.rs` | new |
 | Skill adapter | `integrations/hacp-skill/` (`secure.patch`, `source.json`) | applied to the external hacp-skill repo |
 | Demonstrators | `infra/wasmer/`, `infra/tenki/`, `scripts/demo-*.py` | new, optional |
-| Docs | `docs/hacp-secure-*.md`, `docs/security-architecture.md`, `docs/hacp-wasmer-integration.md` | new |
+| Docs | `docs/hacp-secure.md` (spec), this guide, `docs/hacp-secure-demos.md` | new |
 
 ## Changes to files on `main` (all additive)
 

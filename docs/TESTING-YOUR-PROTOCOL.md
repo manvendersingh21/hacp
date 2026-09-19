@@ -173,5 +173,5 @@ The optional HACP Secure layer extends this playbook with its own matrix —
 test IDs mapped to guarantees, canary scans for secret leakage into
 agent-reachable output, and an explicit `SKIP(degraded)` convention for tests
 that need a dedicated guardian UID. It is tracked separately in
-[hacp-secure-test-matrix.md](hacp-secure-test-matrix.md) so the core L0–L5
+[hacp-secure.md](hacp-secure.md) §14 so the core L0–L5
 tables above stay protocol-only.

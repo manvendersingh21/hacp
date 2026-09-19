@@ -1,7 +1,7 @@
 # Tenki deployment
 
 Based on `feat/tenki-infra`, updated for the completed HACP Secure CLI and the
-Wasmer execution adapter. See [the reproducible demo](../../docs/hacp-secure-tenki-demo.md).
+Wasmer execution adapter. See [the reproducible demo](../../docs/hacp-secure-demos.md).
 
 Run `infra/tenki/demo-e2e.sh --dry-run` for local syntax checks, then
 `infra/tenki/demo-e2e.sh` for two real VMs and unconditional cleanup. An authenticated
