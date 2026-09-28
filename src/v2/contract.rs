@@ -156,13 +156,13 @@ pub enum ContractError {
     MissingDelegationContext,
     #[error("grant {grant_id:?} is not open at {at:?}")]
     GrantNotOpen { grant_id: String, at: String },
-    #[error("grant {grant_id:?} binds {grantor:?}→{grantee:?}, but contract participants are {a:?} and {b:?}")]
+    #[error("grant {grant_id:?} binds {grantor:?}→{grantee:?}, but the contract's delegator is {delegator:?} and performer is {performer:?}")]
     GrantPartyMismatch {
         grant_id: String,
         grantor: String,
         grantee: String,
-        a: String,
-        b: String,
+        delegator: String,
+        performer: String,
     },
     #[error("escalation_path element {found:?} is not a valid agent URN: {reason}")]
     BadEscalationUrn { found: String, reason: String },
@@ -295,18 +295,22 @@ impl Contract {
                     at: at.to_string(),
                 });
             }
-            let a = &session.participants[0];
-            let b = &session.participants[1];
-            let participants: BTreeSet<&str> = BTreeSet::from([a.as_str(), b.as_str()]);
-            let grant_pair: BTreeSet<&str> =
-                BTreeSet::from([grant.grantor.as_str(), grant.grantee.as_str()]);
-            if participants != grant_pair {
+            // Roles, not session order: either party may open the session.
+            // The task owner performs the work, so it must be the grantee;
+            // the other participant delegates, so it must be the grantor.
+            let performer = &task.owner;
+            let delegator = session
+                .participants
+                .iter()
+                .find(|p| *p != performer)
+                .expect("session participants differ and include the task owner");
+            if grant.grantee != *performer || grant.grantor != *delegator {
                 return Err(ContractError::GrantPartyMismatch {
                     grant_id,
                     grantor: grant.grantor.clone(),
                     grantee: grant.grantee.clone(),
-                    a: a.clone(),
-                    b: b.clone(),
+                    delegator: delegator.clone(),
+                    performer: performer.clone(),
                 });
             }
 

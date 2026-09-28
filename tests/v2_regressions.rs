@@ -1026,6 +1026,51 @@ mod tests {
         ));
     }
 
+    fn delegation_under_grant_2(session: &Session, owner: &str) -> Result<Contract, hacp::v2::ContractError> {
+        let mut org = OrgChart::default();
+        org.parent_of.insert(B.into(), A.into());
+        let ledger = ledger(true, T2, T2);
+        Contract::propose(
+            session,
+            "c-v4-roles",
+            Task {
+                task_id: "t-v4-roles".into(),
+                summary: "x".into(),
+                owner: owner.into(),
+            },
+            Relationship::Delegation,
+            Some("g-000000000002".into()),
+            Some(&org),
+            Some(&ledger),
+            Some(T0),
+            vec![A.into()],
+            ContractLimits {
+                max_rounds: 1,
+                max_amendments: 1,
+                max_rework: 0,
+            },
+        )
+    }
+
+    #[test]
+    fn finding_v4_delegation_with_reversed_grant_roles_is_rejected() {
+        // Grant g-...0002 is A (grantor) → B (grantee). Making the grantor A the
+        // performer reverses the roles, even though the participant set matches.
+        assert!(matches!(
+            delegation_under_grant_2(&active(), A),
+            Err(hacp::v2::ContractError::GrantPartyMismatch { .. })
+        ));
+    }
+
+    #[test]
+    fn finding_v4_session_opened_by_the_grantee_with_correct_roles_is_accepted() {
+        let mut s = Session::open("s-audit-grantee", B, A).unwrap();
+        s.accept(A).unwrap();
+        let c = delegation_under_grant_2(&s, B).unwrap();
+        assert_eq!(c.grant_id.as_deref(), Some("g-000000000002"));
+        assert_eq!(c.participants, [B.to_string(), A.to_string()]);
+    }
+
     #[test]
     fn finding_v7_rework_is_bounded_and_exhaustion_rejects_the_contract() {
         use hacp::v2::Submission;

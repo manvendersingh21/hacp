@@ -413,12 +413,19 @@ escalation.raised (same-parent or direct parent/child dispute)
         │ mediated by the shared supervisor
         │ (or, for parent/child, the parent's supervisor)
         ▼ unresolved
-escalation.referred (to the LCA — lowest common supervisor; walks §8.3 chains)
-        │ LCA rules structurally (split, reassign, deadline)
+escalation.referred (above the stage-one mediator — walks §8.3 chains)
+        │ referee rules structurally (split, reassign, deadline)
         │ or MAY invoke an Arbiter role — optional at every N, never mandatory
         ▼ unresolved
 escalation.no_agreement — valid terminal; all evidence retained
 ```
+
+**Referral target.** `escalation.referred` MUST move the dispute to the lowest common
+supervisor (LCA) of the two parties — the nearest agent that supervises both, never a party
+itself. When that LCA is the stage-one mediator (as it is for siblings, whose shared
+supervisor is their LCA), referral MUST instead move to that mediator's own supervisor, so an
+unresolved dispute always climbs above the agent that failed to resolve it. Only when the
+mediator has no supervisor (it is the root) does referral remain with it.
 
 An **Escalation** object records the journey: parties, subject (contract/task/artifact),
 path taken, ruling or its absence. `escalation.resolved` carries the ruling. There is no N at
