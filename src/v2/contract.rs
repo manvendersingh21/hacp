@@ -54,7 +54,16 @@ pub struct ContractLimits {
     /// Maximum amendments after the first freeze.
     pub max_amendments: u64,
     /// Maximum REWORK verdicts allowed before the contract is rejected (V7).
+    ///
+    /// Legacy default: prior to finding V7, rework was unbounded; Hive also
+    /// persists contract snapshots. To keep pre-V7 snapshots deserializable
+    /// and preserve their behaviour, absent `max_rework` means "unbounded".
+    #[serde(default = "default_max_rework")]
     pub max_rework: u64,
+}
+
+fn default_max_rework() -> u64 {
+    u64::MAX
 }
 
 /// The contract lifecycle (§7.3).

@@ -1090,4 +1090,72 @@ mod tests {
         .unwrap();
         assert_eq!(c.state, ContractState::Rejected, "exhausted rework rejects (V7)");
     }
+
+    #[test]
+    fn legacy_contract_snapshots_without_grant_id_reworks_or_max_rework_deserialize_and_keep_unbounded_rework() {
+        use hacp::v2::Submission;
+
+        let s = active();
+        let mut c = Contract::propose(
+            &s,
+            "c-legacy",
+            Task {
+                task_id: "t-legacy".into(),
+                summary: "x".into(),
+                owner: B.into(),
+            },
+            Relationship::Collaboration,
+            None,
+            None,
+            None,
+            None,
+            vec![],
+            ContractLimits {
+                max_rounds: 2,
+                max_amendments: 1,
+                max_rework: 1, // will be removed below to simulate pre-V7 snapshot
+            },
+        )
+        .unwrap();
+        let terms = json!({"output": "x"});
+        c.agree(A, &terms).unwrap();
+        c.agree(B, &terms).unwrap();
+        let digest = c.freeze(terms).unwrap();
+
+        let mut snapshot = serde_json::to_value(&c).unwrap();
+        // Simulate a pre-V4/V7 persisted snapshot.
+        snapshot.as_object_mut().unwrap().remove("grant_id");
+        snapshot.as_object_mut().unwrap().remove("reworks");
+        snapshot
+            .as_object_mut()
+            .unwrap()
+            .get_mut("limits")
+            .unwrap()
+            .as_object_mut()
+            .unwrap()
+            .remove("max_rework");
+
+        let mut restored: Contract = serde_json::from_value(snapshot).unwrap();
+
+        // Legacy behaviour: rework remains unbounded when max_rework is absent.
+        for i in 0..3 {
+            restored
+                .submit(
+                    B,
+                    Submission {
+                        against_revision: digest.clone(),
+                        artifacts: vec![],
+                        evidence: vec![],
+                        claim: "done".into(),
+                    },
+                )
+                .unwrap();
+            restored
+                .decide(Verdict::Rework {
+                    scope: format!("again {i}"),
+                })
+                .unwrap();
+            assert_eq!(restored.state, ContractState::Executing, "still executing (legacy)");
+        }
+    }
 }

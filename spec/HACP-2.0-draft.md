@@ -269,8 +269,8 @@ a valid terminal, recorded with the full negotiation transcript as evidence.
 
 ### 7.4 Bounded negotiation *(carried from 1.1)*
 
-Silence does not consent. Each contract carries `max_rounds`, `max_amendments`, and
-`max_rework`; reaching
+Silence does not consent. Each contract carries `max_rounds` and `max_amendments`, and MAY
+carry `max_rework` (defaulting to unbounded for legacy persisted snapshots); reaching
 the round bound without agreement follows the exhaustion rules below, never an implicit
 freeze. The amendment count bounds proposals as specified in §7.6. The same
 participant MUST NOT counter twice consecutively. During a post-freeze amendment, round or
@@ -280,7 +280,8 @@ participants took part in that amendment negotiation; only bilateral exhaustion 
 
 `max_rework` bounds how many `rework` verdicts may return the contract to `EXECUTING`.
 Once the bound is exhausted, a further `rework` verdict MUST transition the contract to
-`REJECTED` (fail honestly rather than looping).
+`REJECTED` (fail honestly rather than looping). If `max_rework` is absent, it is treated as
+unbounded (legacy behaviour).
 
 ### 7.5 Freeze, EXECUTE, SUBMIT
 
