@@ -181,6 +181,13 @@ pub struct GrantLedger {
 }
 
 impl GrantLedger {
+    /// Fetch a recorded grant by id.
+    pub fn grant(&self, grant_id: &str) -> Result<&CapabilityGrant, GrantError> {
+        self.grants
+            .get(grant_id)
+            .ok_or_else(|| GrantError::UnknownGrant(grant_id.to_string()))
+    }
+
     fn preauthorization_allows_peer(
         &self,
         grant_id: &str,
@@ -356,13 +363,19 @@ impl OrgChart {
         Ok(())
     }
 
-    /// The lowest common supervisor of `a` and `b` (§10.2): the first agent
-    /// appearing in both declared chains, nearest to the leaves.
+    /// The lowest common supervisor of `a` and `b` (§10.2): the first
+    /// *supervisor* appearing in both declared chains, nearest to the leaves.
+    ///
+    /// Load-bearing: the LCA is a supervisor, never one of the parties
+    /// themselves — so each chain excludes its leaf agent.
     pub fn lca(&self, a: &str, b: &str) -> Option<String> {
-        let chain_b: BTreeSet<String> = self.chain(b).into_iter().collect();
-        self.chain(a)
+        let chain_a = self.checked_chain(a).ok()?;
+        let chain_b = self.checked_chain(b).ok()?;
+        let supervisors_b: BTreeSet<String> = chain_b.into_iter().skip(1).collect();
+        chain_a
             .into_iter()
-            .find(|node| chain_b.contains(node))
+            .skip(1)
+            .find(|node| supervisors_b.contains(node))
     }
 
     /// Do `a` and `b` report to the same direct supervisor? (§11's stage one.)
@@ -887,7 +900,9 @@ mod tests {
         }
         assert_eq!(org.lca(&urn("c1"), &urn("c2")), Some(urn("p1")));
         assert_eq!(org.lca(&urn("c1"), &urn("c3")), Some(urn("root")));
-        assert_eq!(org.lca(&urn("c1"), &urn("root")), Some(urn("root")));
+        // The LCA is a *supervisor*, excluding the parties themselves.
+        assert_eq!(org.lca(&urn("p1"), &urn("c1")), Some(urn("root")));
+        assert_eq!(org.lca(&urn("c1"), &urn("root")), None);
         assert!(org.shares_parent(&urn("c1"), &urn("c2")));
         assert!(!org.shares_parent(&urn("c1"), &urn("c3")));
         assert_eq!(org.children(&urn("p1")), vec![urn("c1"), urn("c2")]);

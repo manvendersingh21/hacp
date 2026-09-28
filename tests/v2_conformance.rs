@@ -12,9 +12,12 @@ use hacp::v2::contract::{
 };
 use hacp::v2::envelope::{agent_urn, kinds, Envelope};
 use hacp::v2::session::{Session, SessionState};
+use hacp::v2::{CapabilityGrant, GrantLedger, OrgChart, ScopeElement};
 use serde_json::{json, Value};
 
 const VOLATILE: &[&str] = &["message_id", "timestamp"];
+const AT: &str = "2026-09-05T00:00:00Z";
+const UNTIL: &str = "2026-09-06T00:00:00Z";
 
 fn urn(name: &str) -> String {
     agent_urn::mint(name).unwrap()
@@ -59,6 +62,48 @@ fn send_from_b(
 fn drive_lifecycle() -> (Transcript, String) {
     let a = urn("parent-1");
     let b = urn("child-1");
+    let root = urn("root-1");
+
+    // Minimal delegation context (V4): a valid open grant and a declared org chain.
+    let mut org = OrgChart::default();
+    org.parent_of.insert(a.clone(), root.clone());
+    org.parent_of.insert(b.clone(), a.clone());
+    let mut ledger = GrantLedger::default();
+    ledger
+        .issue(
+            CapabilityGrant::charter(
+                "g-000000000001",
+                CapabilityGrant::DEPLOYMENT_CHARTERER,
+                &a,
+                vec![ScopeElement {
+                    name: "delegation".into(),
+                    delegable: true,
+                }],
+                AT,
+                UNTIL,
+            )
+            .unwrap(),
+            AT,
+        )
+        .unwrap();
+    ledger
+        .issue(
+            CapabilityGrant {
+                grant_id: "g-000000000002".into(),
+                grantor: a.clone(),
+                grantee: b.clone(),
+                scopes: vec![ScopeElement {
+                    name: "delegation".into(),
+                    delegable: true,
+                }],
+                valid_from: AT.into(),
+                valid_until: UNTIL.into(),
+                parent: Some("g-000000000001".into()),
+                peer: None,
+            },
+            AT,
+        )
+        .unwrap();
 
     let mut transcript = Transcript::new();
     let mut session = Session::open("s-000000000001", &a, &b).unwrap();
@@ -87,8 +132,16 @@ fn drive_lifecycle() -> (Transcript, String) {
             owner: b.clone(),
         },
         Relationship::Delegation,
-        vec![urn("root-1"), a.clone()],
-        ContractLimits { max_rounds: 4, max_amendments: 2 },
+        Some("g-000000000002".into()),
+        Some(&org),
+        Some(&ledger),
+        Some(AT),
+        vec![root, a.clone()],
+        ContractLimits {
+            max_rounds: 4,
+            max_amendments: 2,
+            max_rework: 2,
+        },
     )
     .unwrap();
     let terms = json!({
@@ -184,8 +237,16 @@ fn a_rejected_negotiation_is_also_a_golden_lifecycle() {
             owner: a.clone(),
         },
         Relationship::Collaboration,
+        None,
+        None,
+        None,
+        None,
         vec![],
-        ContractLimits { max_rounds: 2, max_amendments: 1 },
+        ContractLimits {
+            max_rounds: 2,
+            max_amendments: 1,
+            max_rework: 0,
+        },
     )
     .unwrap();
     let mut transcript = Transcript::new();

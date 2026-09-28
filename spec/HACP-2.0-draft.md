@@ -269,13 +269,18 @@ a valid terminal, recorded with the full negotiation transcript as evidence.
 
 ### 7.4 Bounded negotiation *(carried from 1.1)*
 
-Silence does not consent. Each contract carries `max_rounds` and `max_amendments`; reaching
+Silence does not consent. Each contract carries `max_rounds`, `max_amendments`, and
+`max_rework`; reaching
 the round bound without agreement follows the exhaustion rules below, never an implicit
 freeze. The amendment count bounds proposals as specified in §7.6. The same
 participant MUST NOT counter twice consecutively. During a post-freeze amendment, round or
 deadline exhaustion returns to `EXECUTING` on the current immutable revision unless both
 participants took part in that amendment negotiation; only bilateral exhaustion is
 `NO_AGREEMENT`.
+
+`max_rework` bounds how many `rework` verdicts may return the contract to `EXECUTING`.
+Once the bound is exhausted, a further `rework` verdict MUST transition the contract to
+`REJECTED` (fail honestly rather than looping).
 
 ### 7.5 Freeze, EXECUTE, SUBMIT
 
@@ -313,6 +318,10 @@ by escalation (§11).
 A **Delegation** is a contract with `relationship: delegation`: parent → child, referencing a
 task, carrying a CapabilityGrant and the declared escalation path.
 
+A delegation contract MUST name `grant_id`, referencing the CapabilityGrant the contract is
+executed under. At contract formation, the referenced grant MUST be open (unrevoked, within
+its window) and its `(grantor, grantee)` MUST exactly match the contract's two participants.
+
 ### 8.2 CapabilityGrant and monotonic authority
 
 A root charter (no parent grant) MAY name the literal `deployment` as its grantor;
@@ -331,8 +340,14 @@ work under a revoked grant is a contract failure, not a crime — it is recorded
 
 ### 8.3 Escalation path
 
-Every delegation declares its parent chain. The chain is the *organizational* fact; it never
-implies communication or artifact edges (ADR-0001 §4).
+Every delegation declares its parent chain as `escalation_path`. The chain is the
+*organizational* fact; it never implies communication or artifact edges (ADR-0001 §4).
+
+For a delegation contract, `escalation_path` MUST:
+
+- be a sequence of agent URNs, and
+- equal the grantor's declared chain in the OrgChart, rendered as `root → … → grantor`
+  (i.e. `reverse(OrgChart::checked_chain(grantor))`).
 
 ## 9. Artifacts, evidence, verification *(normative)* — §④ (part two)
 
@@ -393,10 +408,11 @@ and verifies like any other.
 ## 11. Escalation *(normative)*
 
 ```
-escalation.raised (same-parent dispute)
+escalation.raised (same-parent or direct parent/child dispute)
         │ mediated by the shared supervisor
+        │ (or, for parent/child, the parent's supervisor)
         ▼ unresolved
-escalation.referred (to the LCA — walks §8.3 chains)
+escalation.referred (to the LCA — lowest common supervisor; walks §8.3 chains)
         │ LCA rules structurally (split, reassign, deadline)
         │ or MAY invoke an Arbiter role — optional at every N, never mandatory
         ▼ unresolved

@@ -19,6 +19,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::canon;
+use super::envelope::agent_urn;
+use super::grant::{GrantError, GrantLedger, OrgChart};
 use super::session::{Session, SessionState};
 
 /// Who the contract binds and how (§7.2): the machine is identical; the
@@ -51,6 +53,8 @@ pub struct ContractLimits {
     pub max_rounds: u64,
     /// Maximum amendments after the first freeze.
     pub max_amendments: u64,
+    /// Maximum REWORK verdicts allowed before the contract is rejected (V7).
+    pub max_rework: u64,
 }
 
 /// The contract lifecycle (§7.3).
@@ -137,6 +141,26 @@ pub enum ContractError {
     AmendmentsExhausted { amendments: u64, max: u64 },
     #[error("a delegation must declare its escalation path (§8.3)")]
     DelegationNeedsEscalationPath,
+    #[error("a delegation contract must name the grant_id it is executed under (§8)")]
+    DelegationNeedsGrantId,
+    #[error("delegation contract formation requires an org chart, grant ledger, and timestamp")]
+    MissingDelegationContext,
+    #[error("grant {grant_id:?} is not open at {at:?}")]
+    GrantNotOpen { grant_id: String, at: String },
+    #[error("grant {grant_id:?} binds {grantor:?}→{grantee:?}, but contract participants are {a:?} and {b:?}")]
+    GrantPartyMismatch {
+        grant_id: String,
+        grantor: String,
+        grantee: String,
+        a: String,
+        b: String,
+    },
+    #[error("escalation_path element {found:?} is not a valid agent URN: {reason}")]
+    BadEscalationUrn { found: String, reason: String },
+    #[error("delegation escalation_path must equal the grantor's org chain (root→grantor), expected {expected:?}, found {found:?}")]
+    BadEscalationPath { expected: Vec<String>, found: Vec<String> },
+    #[error(transparent)]
+    Grant(#[from] GrantError),
     #[error("limits must allow at least one round and one amendment")]
     BadLimits,
     #[error("submission answers revision {found:?} but the frozen revision is {expected:?}")]
@@ -161,6 +185,9 @@ pub struct Contract {
     pub contract_id: String,
     pub task: Task,
     pub relationship: Relationship,
+    /// For delegations: the capability grant this contract is executed under (§8).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub grant_id: Option<String>,
     /// Exactly two participants (§7), matching the session the contract formed in.
     pub participants: [String; 2],
     /// The declared escalation path (§8.3): the parent chain. Mandatory for
@@ -172,6 +199,9 @@ pub struct Contract {
     pub rounds: u64,
     /// Amendments accepted since the first freeze.
     pub amendments: u64,
+    /// Rework verdicts applied since the first freeze (V7).
+    #[serde(default)]
+    pub reworks: u64,
     /// Participants recorded as having accepted the current terms.
     agreed_by: BTreeSet<String>,
     /// Canonical content digest shared by all current acceptances. Older
@@ -205,6 +235,10 @@ impl Contract {
         contract_id: &str,
         task: Task,
         relationship: Relationship,
+        grant_id: Option<String>,
+        org: Option<&OrgChart>,
+        ledger: Option<&GrantLedger>,
+        at: Option<&str>,
         escalation_path: Vec<String>,
         limits: ContractLimits,
     ) -> Result<Self, ContractError> {
@@ -217,22 +251,78 @@ impl Contract {
         if relationship == Relationship::Delegation && escalation_path.is_empty() {
             return Err(ContractError::DelegationNeedsEscalationPath);
         }
+        if relationship == Relationship::Delegation && grant_id.is_none() {
+            return Err(ContractError::DelegationNeedsGrantId);
+        }
         if !session.participants.contains(&task.owner) {
             return Err(ContractError::NotAParty {
                 who: task.owner.clone(),
                 contract: contract_id.to_string(),
             });
         }
+
+        // V4: delegation formation is only valid when grounded in an open grant
+        // whose (grantor, grantee) exactly match the two participants, and when
+        // the declared escalation path matches the grantor's org chain.
+        if relationship == Relationship::Delegation {
+            let (org, ledger, at) = match (org, ledger, at) {
+                (Some(o), Some(l), Some(t)) => (o, l, t),
+                _ => return Err(ContractError::MissingDelegationContext),
+            };
+            let grant_id = grant_id.clone().expect("checked above");
+
+            // Basic URN validation for the declared path.
+            for urn in &escalation_path {
+                agent_urn::parse(urn).map_err(|reason| ContractError::BadEscalationUrn {
+                    found: urn.clone(),
+                    reason,
+                })?;
+            }
+
+            let grant = ledger.grant(&grant_id)?;
+            if !ledger.is_open(&grant_id, at)? {
+                return Err(ContractError::GrantNotOpen {
+                    grant_id,
+                    at: at.to_string(),
+                });
+            }
+            let a = &session.participants[0];
+            let b = &session.participants[1];
+            let participants: BTreeSet<&str> = BTreeSet::from([a.as_str(), b.as_str()]);
+            let grant_pair: BTreeSet<&str> =
+                BTreeSet::from([grant.grantor.as_str(), grant.grantee.as_str()]);
+            if participants != grant_pair {
+                return Err(ContractError::GrantPartyMismatch {
+                    grant_id,
+                    grantor: grant.grantor.clone(),
+                    grantee: grant.grantee.clone(),
+                    a: a.clone(),
+                    b: b.clone(),
+                });
+            }
+
+            // Escalation path must be the grantor's declared chain (root→grantor).
+            let mut expected = org.checked_chain(&grant.grantor)?;
+            expected.reverse();
+            if escalation_path != expected {
+                return Err(ContractError::BadEscalationPath {
+                    expected,
+                    found: escalation_path.clone(),
+                });
+            }
+        }
         Ok(Self {
             contract_id: contract_id.to_string(),
             task,
             relationship,
+            grant_id,
             participants: session.participants.clone(),
             escalation_path,
             limits,
             state: ContractState::Proposed,
             rounds: 0,
             amendments: 0,
+            reworks: 0,
             agreed_by: BTreeSet::new(),
             agreed_terms_digest: None,
             last_counter_by: None,
@@ -466,9 +556,16 @@ impl Contract {
                 self.state = ContractState::Settled;
             }
             Verdict::Rework { scope } => {
-                self.rework_scope = Some(scope);
                 self.pending_submission = None;
-                self.state = ContractState::Executing;
+                // V7: once rework is exhausted, further rework verdicts reject.
+                if self.reworks >= self.limits.max_rework {
+                    self.rework_scope = Some(scope);
+                    self.state = ContractState::Rejected;
+                } else {
+                    self.reworks = self.reworks.saturating_add(1);
+                    self.rework_scope = Some(scope);
+                    self.state = ContractState::Executing;
+                }
             }
             Verdict::Reject => {
                 self.pending_submission = None;
@@ -621,15 +718,61 @@ fn revision_digest(contract_id: &str, number: u64, terms: &Value) -> Result<Stri
 mod tests {
     use super::*;
     use crate::v2::envelope::agent_urn;
+    use crate::v2::{CapabilityGrant, GrantLedger, OrgChart, ScopeElement};
     use crate::v2::session::Session;
 
     fn urn(name: &str) -> String {
         agent_urn::mint(name).unwrap()
     }
 
+    const T0: &str = "2026-09-04T00:00:00Z";
+    const T1: &str = "2026-09-05T00:00:00Z";
+
+    fn delegation_context() -> (OrgChart, GrantLedger, String) {
+        let mut org = OrgChart::default();
+        org.parent_of.insert(urn("parent"), urn("root"));
+        org.parent_of.insert(urn("child"), urn("parent"));
+
+        let mut ledger = GrantLedger::default();
+        ledger
+            .issue(
+                CapabilityGrant::charter(
+                    "g-000000000001",
+                    CapabilityGrant::DEPLOYMENT_CHARTERER,
+                    &urn("parent"),
+                    vec![ScopeElement {
+                        name: "delegation".into(),
+                        delegable: true,
+                    }],
+                    T0,
+                    T1,
+                )
+                .unwrap(),
+                T0,
+            )
+            .unwrap();
+
+        let child_grant = CapabilityGrant {
+            grant_id: "g-000000000002".into(),
+            grantor: urn("parent"),
+            grantee: urn("child"),
+            scopes: vec![ScopeElement {
+                name: "delegation".into(),
+                delegable: true,
+            }],
+            valid_from: T0.into(),
+            valid_until: T1.into(),
+            parent: Some("g-000000000001".into()),
+            peer: None,
+        };
+        ledger.issue(child_grant, T0).unwrap();
+        (org, ledger, "g-000000000002".into())
+    }
+
     fn setup() -> (Session, Contract) {
         let mut session = Session::open("s-1", &urn("parent"), &urn("child")).unwrap();
         session.accept(&urn("child")).unwrap();
+        let (org, ledger, grant_id) = delegation_context();
         let contract = Contract::propose(
             &session,
             "c-1",
@@ -639,10 +782,15 @@ mod tests {
                 owner: urn("child"),
             },
             Relationship::Delegation,
+            Some(grant_id),
+            Some(&org),
+            Some(&ledger),
+            Some(T0),
             vec![urn("root"), urn("parent")],
             ContractLimits {
                 max_rounds: 2,
                 max_amendments: 1,
+                max_rework: 2,
             },
         )
         .unwrap();
@@ -653,6 +801,7 @@ mod tests {
     fn setup2(max_amendments: u64) -> (Session, Contract) {
         let mut session = Session::open("s-1", &urn("parent"), &urn("child")).unwrap();
         session.accept(&urn("child")).unwrap();
+        let (org, ledger, grant_id) = delegation_context();
         let contract = Contract::propose(
             &session,
             "c-1",
@@ -662,10 +811,15 @@ mod tests {
                 owner: urn("child"),
             },
             Relationship::Delegation,
+            Some(grant_id),
+            Some(&org),
+            Some(&ledger),
+            Some(T0),
             vec![urn("root"), urn("parent")],
             ContractLimits {
                 max_rounds: 2,
                 max_amendments,
+                max_rework: 2,
             },
         )
         .unwrap();
@@ -706,10 +860,15 @@ mod tests {
                     owner: urn("child"),
                 },
                 Relationship::Delegation,
+                None,
+                None,
+                None,
+                None,
                 vec![],
                 ContractLimits {
                     max_rounds: 1,
-                    max_amendments: 1
+                    max_amendments: 1,
+                    max_rework: 0,
                 },
             ),
             Err(ContractError::DelegationNeedsEscalationPath)

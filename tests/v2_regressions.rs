@@ -14,6 +14,10 @@ mod tests {
     const T2: &str = "2026-09-07T00:00:00Z";
 
     fn contract(session: &Session) -> Result<Contract, hacp::v2::ContractError> {
+        let mut org = OrgChart::default();
+        org.parent_of.insert(B.into(), A.into());
+        // Minimal ledger: charter → parent grant, then parent → child grant.
+        let ledger = ledger(true, T2, T2);
         Contract::propose(
             session,
             "c-audit",
@@ -23,10 +27,15 @@ mod tests {
                 owner: B.into(),
             },
             Relationship::Delegation,
+            Some("g-000000000002".into()),
+            Some(&org),
+            Some(&ledger),
+            Some(T0),
             vec![A.into()],
             ContractLimits {
                 max_rounds: 3,
                 max_amendments: 2,
+                max_rework: 2,
             },
         )
     }
@@ -836,5 +845,247 @@ mod tests {
             assert!(l.is_open("g-000000000001", time).is_err());
             assert!(!l.covers(B, "work/all", time));
         }
+    }
+
+    #[test]
+    fn finding_v3_raise_allows_parent_child_mediated_by_parents_supervisor_and_refer_stops_at_lca() {
+        use hacp::v2::{Escalation, EscalationError, EscalationStage, EscalationSubject};
+        let root = "urn:hacp:agent:root";
+        let parent = "urn:hacp:agent:p1";
+        let child = "urn:hacp:agent:c1";
+        let mut org = OrgChart::default();
+        org.parent_of.insert(parent.into(), root.into());
+        org.parent_of.insert(child.into(), parent.into());
+
+        // Parent/child is legal at stage one, mediated by the parent's supervisor.
+        let (mut esc, mediator) = Escalation::raise(
+            &org,
+            "esc-0000000000v3",
+            parent,
+            child,
+            EscalationSubject::Task { task_id: "t-v3".into() },
+            T0,
+        )
+        .unwrap();
+        assert_eq!(mediator, root);
+        assert_eq!(esc.stage, EscalationStage::Raised);
+
+        // Referral stops at the LCA (the lowest common supervisor): still root, never a party.
+        esc.refer(&org).unwrap();
+        assert_eq!(esc.mediator.as_deref(), Some(root));
+
+        // The degenerate pair a==b is rejected.
+        assert_eq!(
+            Escalation::raise(
+                &org,
+                "esc-0000000000v3b",
+                child,
+                child,
+                EscalationSubject::Task { task_id: "t-v3".into() },
+                T0,
+            ),
+            Err(EscalationError::SameParty(child.into()))
+        );
+    }
+
+    #[test]
+    fn finding_v4_delegation_propose_requires_open_grant_matching_participants_and_valid_escalation_path() {
+        use hacp::v2::ContractError;
+        let c = "urn:hacp:agent:child2";
+
+        let mut org = OrgChart::default();
+        org.parent_of.insert(B.into(), A.into());
+        org.parent_of.insert(c.into(), A.into());
+
+        // Ledger with a valid delegation grant A→B at g-...0002.
+        let mut ledger = ledger(true, T2, T2);
+        // Also issue a sibling grant A→c under the same charter, to exercise mismatch.
+        ledger
+            .issue(
+                CapabilityGrant {
+                    grant_id: "g-000000000099".into(),
+                    grantor: A.into(),
+                    grantee: c.into(),
+                    scopes: vec![ScopeElement {
+                        name: "work/all".into(),
+                        delegable: true,
+                    }],
+                    valid_from: T0.into(),
+                    valid_until: T2.into(),
+                    parent: Some("g-000000000001".into()),
+                    peer: None,
+                },
+                T0,
+            )
+            .unwrap();
+
+        let session = active();
+
+        // Missing grant_id is refused for delegations.
+        assert_eq!(
+            Contract::propose(
+                &session,
+                "c-v4-missing",
+                Task {
+                    task_id: "t-v4".into(),
+                    summary: "x".into(),
+                    owner: B.into(),
+                },
+                Relationship::Delegation,
+                None,
+                Some(&org),
+                Some(&ledger),
+                Some(T0),
+                vec![A.into()],
+                ContractLimits {
+                    max_rounds: 1,
+                    max_amendments: 1,
+                    max_rework: 0,
+                },
+            ),
+            Err(ContractError::DelegationNeedsGrantId)
+        );
+
+        // A grant that binds a different grantee than the contract participants is refused.
+        assert!(matches!(
+            Contract::propose(
+                &session,
+                "c-v4-mismatch",
+                Task {
+                    task_id: "t-v4".into(),
+                    summary: "x".into(),
+                    owner: B.into(),
+                },
+                Relationship::Delegation,
+                Some("g-000000000099".into()),
+                Some(&org),
+                Some(&ledger),
+                Some(T0),
+                vec![A.into()],
+                ContractLimits {
+                    max_rounds: 1,
+                    max_amendments: 1,
+                    max_rework: 0,
+                },
+            ),
+            Err(ContractError::GrantPartyMismatch { .. })
+        ));
+
+        // A closed grant is refused (not silently accepted).
+        let mut closed = ledger.clone();
+        closed.revoke("g-000000000001").unwrap();
+        assert!(matches!(
+            Contract::propose(
+                &session,
+                "c-v4-closed",
+                Task {
+                    task_id: "t-v4".into(),
+                    summary: "x".into(),
+                    owner: B.into(),
+                },
+                Relationship::Delegation,
+                Some("g-000000000002".into()),
+                Some(&org),
+                Some(&closed),
+                Some(T0),
+                vec![A.into()],
+                ContractLimits {
+                    max_rounds: 1,
+                    max_amendments: 1,
+                    max_rework: 0,
+                },
+            ),
+            Err(ContractError::GrantNotOpen { .. })
+        ));
+
+        // An escalation_path not equal to the grantor's org chain is refused.
+        assert!(matches!(
+            Contract::propose(
+                &session,
+                "c-v4-badpath",
+                Task {
+                    task_id: "t-v4".into(),
+                    summary: "x".into(),
+                    owner: B.into(),
+                },
+                Relationship::Delegation,
+                Some("g-000000000002".into()),
+                Some(&org),
+                Some(&ledger),
+                Some(T0),
+                vec![B.into()],
+                ContractLimits {
+                    max_rounds: 1,
+                    max_amendments: 1,
+                    max_rework: 0,
+                },
+            ),
+            Err(ContractError::BadEscalationPath { .. })
+        ));
+    }
+
+    #[test]
+    fn finding_v7_rework_is_bounded_and_exhaustion_rejects_the_contract() {
+        use hacp::v2::Submission;
+        let s = active();
+        let mut c = Contract::propose(
+            &s,
+            "c-v7",
+            Task {
+                task_id: "t-v7".into(),
+                summary: "x".into(),
+                owner: B.into(),
+            },
+            Relationship::Collaboration,
+            None,
+            None,
+            None,
+            None,
+            vec![],
+            ContractLimits {
+                max_rounds: 2,
+                max_amendments: 1,
+                max_rework: 1,
+            },
+        )
+        .unwrap();
+        let terms = json!({"output": "x"});
+        c.agree(A, &terms).unwrap();
+        c.agree(B, &terms).unwrap();
+        let digest = c.freeze(terms).unwrap();
+
+        // First rework is allowed.
+        c.submit(
+            B,
+            Submission {
+                against_revision: digest.clone(),
+                artifacts: vec![],
+                evidence: vec![],
+                claim: "done".into(),
+            },
+        )
+        .unwrap();
+        c.decide(Verdict::Rework {
+            scope: "fix one thing".into(),
+        })
+        .unwrap();
+        assert_eq!(c.state, ContractState::Executing);
+
+        // Second rework verdict exhausts the bound and rejects.
+        c.submit(
+            B,
+            Submission {
+                against_revision: digest,
+                artifacts: vec![],
+                evidence: vec![],
+                claim: "done".into(),
+            },
+        )
+        .unwrap();
+        c.decide(Verdict::Rework {
+            scope: "fix another thing".into(),
+        })
+        .unwrap();
+        assert_eq!(c.state, ContractState::Rejected, "exhausted rework rejects (V7)");
     }
 }

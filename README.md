@@ -83,8 +83,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             owner: worker.into(),
         },
         Relationship::Collaboration,
+        None,
+        None,
+        None,
+        None,
         vec![],
-        ContractLimits { max_rounds: 3, max_amendments: 2 },
+        ContractLimits { max_rounds: 3, max_amendments: 2, max_rework: 2 },
     )?;
     let terms = json!({
         "outputs": ["greeting.txt"],
