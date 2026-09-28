@@ -232,8 +232,17 @@ mod tests {
         let mut l = ledger(false, T2, T2);
         let mut org = OrgChart::default();
         org.parent_of.insert(B.into(), A.into());
-        let result =
-            HiveProfile.authorize_siblings(&mut l, &org, A, B, "review", "g-000000000003", T0, T2);
+        let result = HiveProfile.authorize_siblings(
+            &mut l,
+            &org,
+            A,
+            B,
+            "urn:hacp:agent:peer",
+            "review",
+            "g-000000000003",
+            T0,
+            T2,
+        );
         assert!(
             result.is_err(),
             "non-delegable work/all still issued a cross-branch grant"
@@ -354,13 +363,26 @@ mod tests {
     }
 
     #[test]
-    fn expired_amendments_end_in_no_agreement_without_rewriting_history() {
+    fn finding_v2_unilateral_amendment_exit_is_refused() {
         let mut c = executing();
         let revisions = c.revisions.clone();
         c.propose_amendment(A).unwrap();
+        c.counter(A).unwrap();
+        assert!(matches!(
+            c.counter(A),
+            Err(hacp::v2::ContractError::RepeatedCounter(who)) if who == A
+        ));
+        assert_eq!(c.state, ContractState::Amending);
         c.expire_negotiation().unwrap();
-        assert_eq!(c.state, ContractState::NoAgreement);
+        assert_eq!(c.state, ContractState::Executing);
         assert_eq!(c.revisions, revisions);
+
+        let mut bilateral = executing();
+        bilateral.propose_amendment(A).unwrap();
+        bilateral.counter(B).unwrap();
+        bilateral.counter(A).unwrap();
+        assert!(bilateral.counter(B).is_err());
+        assert_eq!(bilateral.state, ContractState::NoAgreement);
     }
 
     #[test]
@@ -425,14 +447,44 @@ mod tests {
     fn sibling_preauthorization_preserves_exact_scope_delegability_and_ancestry() {
         let (mut l, org) = cross_branch(false);
         assert!(HiveProfile
-            .authorize_siblings(&mut l, &org, A, B, "review", "g-000000000011", T0, T2)
+            .authorize_siblings(
+                &mut l,
+                &org,
+                A,
+                B,
+                "urn:hacp:agent:peer",
+                "review",
+                "g-000000000011",
+                T0,
+                T2
+            )
             .is_err());
         let (mut l, org) = cross_branch(true);
         assert!(HiveProfile
-            .authorize_siblings(&mut l, &org, A, B, "deploy", "g-000000000011", T0, T2)
+            .authorize_siblings(
+                &mut l,
+                &org,
+                A,
+                B,
+                "urn:hacp:agent:peer",
+                "deploy",
+                "g-000000000011",
+                T0,
+                T2
+            )
             .is_err());
         HiveProfile
-            .authorize_siblings(&mut l, &org, A, B, "review", "g-000000000011", T0, T2)
+            .authorize_siblings(
+                &mut l,
+                &org,
+                A,
+                B,
+                "urn:hacp:agent:peer",
+                "review",
+                "g-000000000011",
+                T0,
+                T2,
+            )
             .unwrap();
         assert_eq!(
             l.held_by(B, T0)[0].parent.as_deref(),
@@ -450,7 +502,17 @@ mod tests {
         let mut org = OrgChart::default();
         org.parent_of.insert(B.into(), A.into());
         assert!(HiveProfile
-            .authorize_siblings(&mut l, &org, A, B, "review", "g-000000000003", T0, T2)
+            .authorize_siblings(
+                &mut l,
+                &org,
+                A,
+                B,
+                "urn:hacp:agent:peer",
+                "review",
+                "g-000000000003",
+                T0,
+                T2
+            )
             .is_err());
     }
 
@@ -471,7 +533,17 @@ mod tests {
         use hacp::v2::{CollaborationPermit, CollaborationRequest};
         let (mut l, org) = cross_branch(true);
         HiveProfile
-            .authorize_siblings(&mut l, &org, A, B, "review", "g-000000000011", T0, T2)
+            .authorize_siblings(
+                &mut l,
+                &org,
+                A,
+                B,
+                "urn:hacp:agent:peer",
+                "review",
+                "g-000000000011",
+                T0,
+                T2,
+            )
             .unwrap();
         let request = CollaborationRequest {
             request_id: "cr-000000000001".into(),
@@ -480,7 +552,7 @@ mod tests {
             task_class: "review".into(),
             expires: T2.into(),
         };
-        let p = CollaborationPermit::by_preauthorization(&l, &request, T0).unwrap();
+        let p = CollaborationPermit::by_preauthorization(&org, &l, &request, T0).unwrap();
         assert_eq!(p.expires, T1);
         p.authorize_session(&org, &l, B, &request.peer, "review", T0)
             .unwrap();
@@ -492,6 +564,58 @@ mod tests {
         l.revoke("g-000000000010").unwrap();
         assert!(p
             .authorize_session(&org, &l, B, &request.peer, "review", T0)
+            .is_err());
+    }
+
+    #[test]
+    fn finding_v1_preauthorization_cannot_name_peer_outside_grantor_authority() {
+        use hacp::v2::{CollaborationPermit, CollaborationRequest};
+        let (mut l, mut org) = cross_branch(true);
+        let outsider = "urn:hacp:agent:outsider";
+
+        assert!(HiveProfile
+            .authorize_siblings(
+                &mut l,
+                &org,
+                A,
+                B,
+                outsider,
+                "review",
+                "g-000000000011",
+                T0,
+                T2,
+            )
+            .is_err());
+
+        HiveProfile
+            .authorize_siblings(
+                &mut l,
+                &org,
+                A,
+                B,
+                "urn:hacp:agent:peer",
+                "review",
+                "g-000000000011",
+                T0,
+                T2,
+            )
+            .unwrap();
+        let request = CollaborationRequest {
+            request_id: "cr-000000000099".into(),
+            requester: B.into(),
+            peer: outsider.into(),
+            task_class: "review".into(),
+            expires: T1.into(),
+        };
+        assert!(CollaborationPermit::by_preauthorization(&org, &l, &request, T0).is_err());
+
+        let mut valid_request = request.clone();
+        valid_request.peer = "urn:hacp:agent:peer".into();
+        let permit =
+            CollaborationPermit::by_preauthorization(&org, &l, &valid_request, T0).unwrap();
+        org.parent_of.remove(&valid_request.peer);
+        assert!(permit
+            .authorize_session(&org, &l, B, &valid_request.peer, "review", T0)
             .is_err());
     }
 

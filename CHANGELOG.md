@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Fix V1: constrain preauthorized collaboration peers to the grantor's authority at issuance and admission; recursive-pairwise preauthorization additionally requires a named sibling peer.
+- Fix V2: reject consecutive counters by one participant and preserve the current executing revision when a unilateral amendment exhausts its rounds or deadline.
+
 - Add the optional HACP Secure layer: guardian-held key custody, secure
   envelope transport, signatures, and replay protection behind a `guardian`
   Cargo feature, plus the `hacp-secure` agent CLI and the frozen

@@ -149,6 +149,8 @@ pub enum ContractError {
     InactiveSession(SessionState),
     #[error("accepted terms differ; counter before accepting different terms")]
     TermsMismatch,
+    #[error("{0:?} cannot counter twice in succession")]
+    RepeatedCounter(String),
     #[error("verification does not match the pending submission: {0}")]
     InvalidVerification(String),
 }
@@ -176,6 +178,12 @@ pub struct Contract {
     /// snapshots without this field must collect fresh acceptance before freeze.
     #[serde(default)]
     agreed_terms_digest: Option<String>,
+    /// Last participant to counter in the current negotiation loop.
+    #[serde(default)]
+    last_counter_by: Option<String>,
+    /// Participants that acted in the current amendment negotiation.
+    #[serde(default)]
+    amendment_participants: BTreeSet<String>,
     /// Every frozen revision, in order; history is never rewritten (§7.6).
     pub revisions: Vec<Revision>,
     /// The submission awaiting a verdict, if any.
@@ -227,6 +235,8 @@ impl Contract {
             amendments: 0,
             agreed_by: BTreeSet::new(),
             agreed_terms_digest: None,
+            last_counter_by: None,
+            amendment_participants: BTreeSet::new(),
             revisions: Vec::new(),
             pending_submission: None,
             pending_submitter: None,
@@ -245,8 +255,9 @@ impl Contract {
         }
     }
 
-    /// Counter the current terms (§7.3–§7.4). Each counter consumes a round;
-    /// exhausting `max_rounds` lands in `NoAgreement` — the valid terminal.
+    /// Counter the current terms (§7.3–§7.4). Each counter consumes a round.
+    /// Pre-freeze exhaustion lands in `NoAgreement`; unilateral amendment
+    /// exhaustion restores `Executing` on the current revision.
     pub fn counter(&mut self, by: &str) -> Result<(), ContractError> {
         self.authorize(by)?;
         if !matches!(
@@ -259,12 +270,23 @@ impl Contract {
             });
         }
         let amending = self.state == ContractState::Amending;
+        if self.last_counter_by.as_deref() == Some(by) {
+            return Err(ContractError::RepeatedCounter(by.to_string()));
+        }
+        self.last_counter_by = Some(by.to_string());
+        if amending {
+            self.amendment_participants.insert(by.to_string());
+        }
         self.rounds = self.rounds.saturating_add(1);
         // A counter resets consensus: terms changed under the acceptors' feet.
         self.agreed_by.clear();
         self.agreed_terms_digest = None;
         if self.rounds >= self.limits.max_rounds {
-            self.state = ContractState::NoAgreement;
+            self.state = if amending && self.amendment_participants.len() < 2 {
+                ContractState::Executing
+            } else {
+                ContractState::NoAgreement
+            };
             return Err(ContractError::RoundsExhausted {
                 rounds: self.rounds,
                 max: self.limits.max_rounds,
@@ -379,7 +401,8 @@ impl Contract {
     }
 
     /// Expire negotiation explicitly (deadline, abandonment): terminal
-    /// `NoAgreement` from any pre-freeze state (§7.4).
+    /// `NoAgreement` from any pre-freeze state (§7.4). A unilateral amendment
+    /// instead returns to `Executing` on the current revision.
     pub fn expire_negotiation(&mut self) -> Result<(), ContractError> {
         if !matches!(
             self.state,
@@ -393,7 +416,12 @@ impl Contract {
                 state: self.state,
             });
         }
-        self.state = ContractState::NoAgreement;
+        self.state =
+            if self.state == ContractState::Amending && self.amendment_participants.len() < 2 {
+                ContractState::Executing
+            } else {
+                ContractState::NoAgreement
+            };
         Ok(())
     }
 
@@ -496,13 +524,16 @@ impl Contract {
         self.agreed_by.clear();
         self.agreed_terms_digest = None;
         self.rounds = 0;
+        self.last_counter_by = None;
+        self.amendment_participants.clear();
+        self.amendment_participants.insert(by.to_string());
         Ok(())
     }
 
     /// Decide an amendment (§7.6). Both accepting freezes revision N+1 and
     /// returns its digest; a refusal returns to `Executing` with the contract
     /// unchanged — a declined amendment is not a dispute. Round exhaustion is
-    /// terminal `NoAgreement`.
+    /// `NoAgreement` only after both participants took part.
     pub fn decide_amendment(
         &mut self,
         by: &str,
@@ -516,6 +547,7 @@ impl Contract {
                 state: self.state,
             });
         }
+        self.amendment_participants.insert(by.to_string());
         if !accept {
             self.state = ContractState::Executing;
             self.agreed_by.clear();

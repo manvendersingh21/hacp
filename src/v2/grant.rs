@@ -423,10 +423,12 @@ impl CollaborationPermit {
     /// §10.2, path two: preauthorization — a standing `cross-branch/<class>`
     /// grant substitutes for the LCA's per-session ruling.
     pub fn by_preauthorization(
+        org: &OrgChart,
         ledger: &GrantLedger,
         request: &CollaborationRequest,
         at: &str,
     ) -> Result<Self, CrossBranchError> {
+        org.validate()?;
         request.validate()?;
         validate_timestamp(at).map_err(|_| GrantError::BadTimestamp(at.into()))?;
         let grant_id = ledger
@@ -435,6 +437,14 @@ impl CollaborationPermit {
                 requester: request.requester.clone(),
                 class: request.task_class.clone(),
             })?;
+        let grant = &ledger.grants[&grant_id];
+        if !org.chain(&request.peer).contains(&grant.grantor) {
+            return Err(GrantError::ChainMismatch {
+                grantor: grant.grantor.clone(),
+                grantee: request.peer.clone(),
+            }
+            .into());
+        }
         let mut expires = request.expires.clone();
         let mut current = Some(grant_id.as_str());
         while let Some(id) = current {
@@ -511,8 +521,13 @@ impl CollaborationPermit {
                 }
             }
             PermitBasis::Preauthorization { grant_id } => {
+                let grantor_authorizes_peer = ledger
+                    .grants
+                    .get(grant_id)
+                    .is_some_and(|grant| org.chain(&self.peer).contains(&grant.grantor));
                 if self.issued_by != self.requester
                     || !ledger.is_open(grant_id, at)?
+                    || !grantor_authorizes_peer
                     || !ledger.held_by(&self.requester, at).iter().any(|g| {
                         g.grant_id == *grant_id
                             && g.scopes
@@ -808,22 +823,40 @@ mod tests {
         // Preauthorization: a standing cross-branch/review grant for c1.
         let mut ledger = GrantLedger::default();
         assert!(matches!(
-            CollaborationPermit::by_preauthorization(&ledger, &request, T0),
+            CollaborationPermit::by_preauthorization(&org, &ledger, &request, T0),
             Err(CrossBranchError::NoPreauthorization { .. })
         ));
         ledger
             .issue(
                 root_grant(
-                    &urn("c1"),
+                    &urn("root"),
                     vec![ScopeElement {
                         name: "cross-branch/review".into(),
-                        delegable: false,
+                        delegable: true,
                     }],
                 ),
                 T0,
             )
             .unwrap();
-        let preauth = CollaborationPermit::by_preauthorization(&ledger, &request, T0).unwrap();
+        ledger
+            .issue(
+                CapabilityGrant {
+                    grant_id: "g-000000000002".into(),
+                    grantor: urn("root"),
+                    grantee: urn("c1"),
+                    scopes: vec![ScopeElement {
+                        name: "cross-branch/review".into(),
+                        delegable: false,
+                    }],
+                    valid_from: T0.into(),
+                    valid_until: T1.into(),
+                    parent: Some("g-000000000001".into()),
+                },
+                T0,
+            )
+            .unwrap();
+        let preauth =
+            CollaborationPermit::by_preauthorization(&org, &ledger, &request, T0).unwrap();
         assert!(matches!(
             preauth.basis,
             PermitBasis::Preauthorization { .. }
