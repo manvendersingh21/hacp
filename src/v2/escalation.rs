@@ -53,8 +53,12 @@ pub enum EscalationStage {
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum EscalationError {
+    #[error("escalation parties must differ; got {0:?} twice")]
+    SameParty(String),
     #[error("escalation parties must share a direct supervisor to raise (§11); {0:?} and {1:?} do not")]
     NotSameParent(String, String),
+    #[error("parent {0:?} has no supervisor to mediate a parent/child raise (§11)")]
+    NoSupervisor(String),
     #[error("mediator {0:?} is not the shared supervisor")]
     NotMediator(String),
     #[error("arbiter {0:?} must differ from both parties")]
@@ -101,12 +105,35 @@ impl Escalation {
         subject: EscalationSubject,
         at: &str,
     ) -> Result<(Self, String), EscalationError> {
-        let shared = org
-            .parent_of
-            .get(a)
-            .filter(|p| org.parent_of.get(b) == Some(p))
-            .cloned();
-        let mediator = shared.ok_or_else(|| EscalationError::NotSameParent(a.to_string(), b.to_string()))?;
+        if a == b {
+            return Err(EscalationError::SameParty(a.to_string()));
+        }
+
+        // Two legal stage-one shapes (§11):
+        // - siblings: same direct supervisor (mediated by that supervisor)
+        // - direct parent/child: mediated by the parent's supervisor
+        let mediator = if org.shares_parent(a, b) {
+            org.parent_of.get(a).cloned()
+        } else if org.parent_of.get(a).map(String::as_str) == Some(b) {
+            // b is a's parent; mediator is b's supervisor.
+            Some(
+                org.parent_of
+                    .get(b)
+                    .cloned()
+                    .ok_or_else(|| EscalationError::NoSupervisor(b.to_string()))?,
+            )
+        } else if org.parent_of.get(b).map(String::as_str) == Some(a) {
+            // a is b's parent; mediator is a's supervisor.
+            Some(
+                org.parent_of
+                    .get(a)
+                    .cloned()
+                    .ok_or_else(|| EscalationError::NoSupervisor(a.to_string()))?,
+            )
+        } else {
+            None
+        }
+        .ok_or_else(|| EscalationError::NotSameParent(a.to_string(), b.to_string()))?;
         let esc = Escalation {
             escalation_id: escalation_id.to_string(),
             parties: [a.to_string(), b.to_string()],
@@ -128,9 +155,19 @@ impl Escalation {
         if self.stage != EscalationStage::Raised {
             return Err(EscalationError::NotRaised);
         }
-        let lca = org
+        let mut lca = org
             .lca(&self.parties[0], &self.parties[1])
             .ok_or(EscalationError::NoLca)?;
+
+        // V3: referral must actually climb above the stage-one mediator when
+        // the LCA would otherwise be that same mediator (common for siblings).
+        // If the stage-one mediator is already the root (has no supervisor),
+        // referral stays there.
+        if self.mediator.as_deref() == Some(lca.as_str()) {
+            if let Some(parent) = org.parent_of.get(&lca).cloned() {
+                lca = parent;
+            }
+        }
         self.mediator = Some(lca);
         self.stage = EscalationStage::Referred;
         Ok(())
@@ -230,6 +267,36 @@ mod tests {
     }
 
     #[test]
+    fn a_parent_child_dispute_can_raise_under_the_parents_supervisor() {
+        let (esc, mediator) = Escalation::raise(
+            &org(),
+            "esc-000000000008",
+            &urn("p1"),
+            &urn("c1"),
+            EscalationSubject::Task { task_id: "t-1".into() },
+            AT,
+        )
+        .unwrap();
+        assert_eq!(mediator, urn("root"));
+        assert_eq!(esc.stage, EscalationStage::Raised);
+        assert_eq!(esc.stage_kind(), "escalation.raised");
+    }
+
+    #[test]
+    fn raise_rejects_the_same_party_pair() {
+        let err = Escalation::raise(
+            &org(),
+            "esc-000000000009",
+            &urn("c1"),
+            &urn("c1"),
+            EscalationSubject::Task { task_id: "t-1".into() },
+            AT,
+        )
+        .unwrap_err();
+        assert_eq!(err, EscalationError::SameParty(urn("c1")));
+    }
+
+    #[test]
     fn referral_walks_to_the_lca_and_the_lca_rules_structurally() {
         let (mut esc, _) = Escalation::raise(
             &org(),
@@ -241,7 +308,7 @@ mod tests {
         )
         .unwrap();
         esc.refer(&org()).unwrap();
-        assert_eq!(esc.mediator.as_deref(), Some(urn("p1").as_str()));
+        assert_eq!(esc.mediator.as_deref(), Some(urn("root").as_str()));
         assert_eq!(esc.stage_kind(), "escalation.referred");
         esc.resolve(Ruling::Reassign { to: urn("c3") }).unwrap();
         assert_eq!(esc.stage, EscalationStage::Resolved);

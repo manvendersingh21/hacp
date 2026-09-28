@@ -12,6 +12,9 @@
 
 - Fix V1: constrain preauthorized collaboration peers to the grantor's authority at issuance and admission; recursive-pairwise preauthorization additionally binds and enforces one named sibling peer. This adds `CapabilityGrant::peer` and makes the public `CollaborationPermit::by_preauthorization` and `HiveProfile::authorize_siblings` signatures breaking API changes.
 - Fix V2: reject consecutive counters by one participant and preserve the current executing revision when a unilateral amendment exhausts its rounds or deadline.
+- Fix V3: define LCA as the lowest common supervisor (never a party); escalation `raise` accepts direct parent/child disputes mediated by the parent's supervisor and rejects `a == b`.
+- Fix V4: delegation contracts carry `grant_id`; contract formation validates the referenced grant is open, matches the two participants, and that `escalation_path` matches the grantor's declared org chain.
+- Fix V7: add `ContractLimits.max_rework`; once rework is exhausted, further `rework` verdicts transition the contract to `Rejected`.
 - Fix HACP Secure S1 hello amplification/livelock by answering each
   `(context, hello signature)` once through a bounded replay history that
   survives session eviction, and by scanning message directories after the

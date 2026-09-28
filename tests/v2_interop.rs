@@ -23,10 +23,13 @@ use hacp::v2::contract::{
 };
 use hacp::v2::envelope::{agent_urn, kinds, Envelope, PROTOCOL};
 use hacp::v2::session::Session;
+use hacp::v2::{CapabilityGrant, GrantLedger, OrgChart, ScopeElement};
 use hacp::v2::verification::{Check, Verification};
 use serde_json::{json, Value};
 
 const VOLATILE: &[&str] = &["message_id", "timestamp"];
+const AT: &str = "2026-09-05T00:00:00Z";
+const UNTIL: &str = "2026-09-06T00:00:00Z";
 
 fn crate_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -93,6 +96,7 @@ fn an_independent_peer_interoperates_over_the_file_edge() {
 
     let a = agent_urn::mint("parent-1").unwrap();
     let b = agent_urn::mint("child-1").unwrap();
+    let root = agent_urn::mint("root-1").unwrap();
     let session_id = "s-000000000003".to_string();
     let a_out = edge.join("a-out");
     let b_out = edge.join("b-out");
@@ -154,6 +158,47 @@ fn an_independent_peer_interoperates_over_the_file_edge() {
     );
 
     // §7: propose, both accept, freeze.
+    // Minimal delegation context (V4): a valid open grant and a declared org chain.
+    let mut org = OrgChart::default();
+    org.parent_of.insert(a.clone(), root.clone());
+    org.parent_of.insert(b.clone(), a.clone());
+    let mut ledger = GrantLedger::default();
+    ledger
+        .issue(
+            CapabilityGrant::charter(
+                "g-000000000001",
+                CapabilityGrant::DEPLOYMENT_CHARTERER,
+                &a,
+                vec![ScopeElement {
+                    name: "delegation".into(),
+                    delegable: true,
+                }],
+                AT,
+                UNTIL,
+            )
+            .unwrap(),
+            AT,
+        )
+        .unwrap();
+    ledger
+        .issue(
+            CapabilityGrant {
+                grant_id: "g-000000000002".into(),
+                grantor: a.clone(),
+                grantee: b.clone(),
+                scopes: vec![ScopeElement {
+                    name: "delegation".into(),
+                    delegable: true,
+                }],
+                valid_from: AT.into(),
+                valid_until: UNTIL.into(),
+                parent: Some("g-000000000001".into()),
+                peer: None,
+            },
+            AT,
+        )
+        .unwrap();
+
     let mut contract = Contract::propose(
         &session,
         "c-000000000003",
@@ -163,10 +208,15 @@ fn an_independent_peer_interoperates_over_the_file_edge() {
             owner: b.clone(),
         },
         Relationship::Delegation,
-        vec![agent_urn::mint("root-1").unwrap(), a.clone()],
+        Some("g-000000000002".into()),
+        Some(&org),
+        Some(&ledger),
+        Some(AT),
+        vec![root.clone(), a.clone()],
         ContractLimits {
             max_rounds: 4,
             max_amendments: 2,
+            max_rework: 2,
         },
     )
     .unwrap();
