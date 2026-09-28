@@ -171,3 +171,27 @@ fn complete_kind_goldens_match_frozen_shape() {
         std::fs::write(path, serde_json::to_vec(&goldens).unwrap()).unwrap();
     }
 }
+
+#[test]
+fn s5_ciphertext_and_timestamp_match_schema() {
+    let schema: Value = serde_json::from_str(include_str!("../spec/schemas/secure-envelope.json")).unwrap();
+    assert_eq!(schema["properties"]["ct"]["pattern"], "^(?:[0-9a-f]{2}){16,}$");
+    assert_eq!(schema["properties"]["ts"]["format"], "date-time");
+    let mut env = msg();
+    for size in [31, 33, 35] {
+        env.ct = Some("0".repeat(size));
+        assert_eq!(env.validate(), Err(SecureError::SchemaViolation));
+    }
+    for size in [32, 34, 64] {
+        env.ct = Some("0".repeat(size));
+        env.validate().unwrap();
+    }
+    for timestamp in ["2026-09-13 00:00:00Z", "2026-09-13T25:00:00Z"] {
+        env.ts = Some(timestamp.into());
+        assert_eq!(env.validate(), Err(SecureError::SchemaViolation));
+    }
+    for timestamp in ["2026-09-13T00:00:00Z", "2026-09-13t00:00:00z", "2026-09-13T00:00:00.123+01:00"] {
+        env.ts = Some(timestamp.into());
+        env.validate().unwrap();
+    }
+}

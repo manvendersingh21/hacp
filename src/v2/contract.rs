@@ -133,7 +133,7 @@ pub enum ContractError {
     },
     #[error("negotiation bound reached: {rounds} of {max} rounds — NoAgreement (§7.4)")]
     RoundsExhausted { rounds: u64, max: u64 },
-    #[error("amendment bound reached: {amendments} of {max} — NoAgreement (§7.6)")]
+    #[error("amendment bound reached: {amendments} of {max} — proposal refused (§7.6)")]
     AmendmentsExhausted { amendments: u64, max: u64 },
     #[error("a delegation must declare its escalation path (§8.3)")]
     DelegationNeedsEscalationPath,
@@ -512,12 +512,31 @@ impl Contract {
 
     /// Propose an amendment (§7.6): `Executing → Amending`, negotiated against
     /// the frozen revision.
+    ///
+    /// **Finding V5**: once `amendments` has already reached `max_amendments`,
+    /// the bound is exhausted and further amendments are refused here — the
+    /// contract stays `Executing` on its last frozen revision, unchanged.
+    /// Before this fix `propose_amendment` never checked the bound at all, so
+    /// a contract could be walked into `Amending` past the bound and only
+    /// discover exhaustion in `decide_amendment`, at which point *both*
+    /// parties had just agreed to something and the engine answered by
+    /// killing the whole contract into `NoAgreement` — nonsensical for a
+    /// contract that had already frozen and executed successfully. Exceeding
+    /// the amendment bound is a refused amendment (§7.6 "without agreement"
+    /// applies to the amendment, not to the contract as a whole), not a
+    /// retroactive erasure of an agreement that already happened.
     pub fn propose_amendment(&mut self, by: &str) -> Result<(), ContractError> {
         self.authorize(by)?;
         if self.state != ContractState::Executing {
             return Err(ContractError::IllegalTransition {
                 action: "propose an amendment",
                 state: self.state,
+            });
+        }
+        if self.amendments >= self.limits.max_amendments {
+            return Err(ContractError::AmendmentsExhausted {
+                amendments: self.amendments,
+                max: self.limits.max_amendments,
             });
         }
         self.state = ContractState::Amending;
@@ -567,14 +586,11 @@ impl Contract {
         if self.agreed_by.len() < 2 {
             return Ok(None); // awaiting the other participant
         }
+        // V5: the bound is now enforced up front in `propose_amendment`, so an
+        // amendment reaching here has always kept `amendments < max_amendments`
+        // — the amendment that reaches the bound exactly still freezes.
+        debug_assert!(self.amendments < self.limits.max_amendments);
         self.amendments = self.amendments.saturating_add(1);
-        if self.amendments > self.limits.max_amendments {
-            self.state = ContractState::NoAgreement;
-            return Err(ContractError::AmendmentsExhausted {
-                amendments: self.amendments,
-                max: self.limits.max_amendments,
-            });
-        }
         let number = self.revisions.len() as u64 + 1;
         let digest = revision_digest(&self.contract_id, number, &terms)?;
         self.revisions.push(Revision {
@@ -631,6 +647,33 @@ mod tests {
         )
         .unwrap();
         (session, contract)
+    }
+
+    /// Like `setup()` but with a caller-chosen `max_amendments` (V5 test).
+    fn setup2(max_amendments: u64) -> (Session, Contract) {
+        let mut session = Session::open("s-1", &urn("parent"), &urn("child")).unwrap();
+        session.accept(&urn("child")).unwrap();
+        let contract = Contract::propose(
+            &session,
+            "c-1",
+            Task {
+                task_id: "t-1".into(),
+                summary: "write the thing".into(),
+                owner: urn("child"),
+            },
+            Relationship::Delegation,
+            vec![urn("root"), urn("parent")],
+            ContractLimits {
+                max_rounds: 2,
+                max_amendments,
+            },
+        )
+        .unwrap();
+        (session, contract)
+    }
+
+    fn json_amended_variant(i: u64) -> Value {
+        serde_json::json!({"outputs": [{"name": format!("v{i}.txt")}], "budget": {"max_hours": 3 + i}})
     }
 
     fn agreed_terms() -> Value {
@@ -790,20 +833,77 @@ mod tests {
         assert_eq!(c.revisions.len(), 1);
     }
 
+    /// **Finding V5** (fixed): `max_amendments = 1`. The one amendment the
+    /// bound allows lands *at* the bound and still freezes into `Executing`
+    /// with a second revision — reaching the bound is not the same as
+    /// exhausting it. A second `propose_amendment` is refused outright and
+    /// the contract is left exactly as it was: `Executing` on revision 2,
+    /// never `NoAgreement`. This replaces the old test of the same name, which
+    /// encoded the pre-fix behaviour (both parties agreeing at the bound used
+    /// to land in `NoAgreement`, and `propose_amendment` never refused at the
+    /// bound at all).
     #[test]
     fn amendment_bounds_end_in_no_agreement() {
         let (_, mut c) = setup();
         drive_to_executing(&mut c);
-        // max_amendments = 1: the second accepted amendment exhausts the bound.
-        for _ in 0..2 {
+        // The one allowed amendment reaches the bound and succeeds.
+        c.propose_amendment(&urn("parent")).unwrap();
+        c.decide_amendment(&urn("parent"), true, Some(json_amended()))
+            .unwrap();
+        let second = c
+            .decide_amendment(&urn("child"), true, Some(json_amended()))
+            .unwrap();
+        assert!(second.is_some(), "the amendment at the bound must freeze");
+        assert_eq!(c.state, ContractState::Executing);
+        assert_eq!(c.revisions.len(), 2);
+        assert_eq!(c.amendments, 1);
+        // A further amendment is refused at proposal time — the contract is
+        // untouched, not driven into NoAgreement.
+        assert_eq!(
+            c.propose_amendment(&urn("parent")),
+            Err(ContractError::AmendmentsExhausted {
+                amendments: 1,
+                max: 1
+            })
+        );
+        assert_eq!(c.state, ContractState::Executing);
+        assert_eq!(c.revisions.len(), 2);
+    }
+
+    /// **Finding V5** regression: with `max_amendments = 2`, three amendment
+    /// attempts — the first two agreed by both parties at (and up to) the
+    /// bound must freeze; the third must be refused by `propose_amendment`
+    /// itself, and the contract must remain `Executing`, never `NoAgreement`.
+    /// This is the corrected counterpart of the audit proof
+    /// `mutually_agreed_amendment_at_bound_is_no_agreement`, which asserted
+    /// the pre-fix (buggy) `NoAgreement` outcome.
+    #[test]
+    fn v5_amendment_agreed_at_the_bound_freezes_not_no_agreement() {
+        let (_, mut c) = setup2(2);
+        drive_to_executing(&mut c);
+        for i in 0..2 {
             c.propose_amendment(&urn("parent")).unwrap();
-            c.decide_amendment(&urn("parent"), true, Some(json_amended()))
+            let t = json_amended_variant(i);
+            c.decide_amendment(&urn("parent"), true, Some(t.clone()))
                 .unwrap();
-            match c.decide_amendment(&urn("child"), true, Some(json_amended())) {
-                Ok(_) | Err(_) => {}
-            }
+            let r = c
+                .decide_amendment(&urn("child"), true, Some(t))
+                .unwrap();
+            assert!(r.is_some(), "amendment {i} (within the bound) must freeze");
         }
-        assert_eq!(c.state, ContractState::NoAgreement);
+        assert_eq!(c.state, ContractState::Executing, "not NoAgreement (V5)");
+        assert_eq!(c.revisions.len(), 3);
+        assert_eq!(c.amendments, 2);
+        // The third attempt exceeds the bound and is refused up front.
+        assert_eq!(
+            c.propose_amendment(&urn("parent")),
+            Err(ContractError::AmendmentsExhausted {
+                amendments: 2,
+                max: 2
+            })
+        );
+        assert_eq!(c.state, ContractState::Executing, "unchanged, not NoAgreement (V5)");
+        assert_eq!(c.revisions.len(), 3);
     }
 
     #[test]
@@ -851,5 +951,34 @@ mod tests {
             c.agree(&urn("stranger"), &agreed_terms()),
             Err(ContractError::NotAParty { .. })
         ));
+    }
+
+    /// **Finding V8** (fixed, item 4 of 4): the wire form of `Verdict` is
+    /// `accept | rework | reject` — matching `spec/schemas/verification.json`
+    /// and every existing wire test/fixture in this crate — not the
+    /// `accepted | rework | rejected` the spec's §9.3 prose used to say. The
+    /// prose was corrected to match the wire, since the wire is what every
+    /// other implementation (schema, tests, the Python interop peer) already
+    /// agreed on.
+    #[test]
+    fn v8_verdict_wire_strings_are_accept_reject_not_accepted_rejected() {
+        assert_eq!(
+            serde_json::from_value::<Verdict>(serde_json::json!("accept")).unwrap(),
+            Verdict::Accept
+        );
+        assert_eq!(
+            serde_json::from_value::<Verdict>(serde_json::json!("reject")).unwrap(),
+            Verdict::Reject
+        );
+        assert!(serde_json::from_value::<Verdict>(serde_json::json!("accepted")).is_err());
+        assert!(serde_json::from_value::<Verdict>(serde_json::json!("rejected")).is_err());
+        assert_eq!(
+            serde_json::to_value(Verdict::Accept).unwrap(),
+            serde_json::json!("accept")
+        );
+        assert_eq!(
+            serde_json::to_value(Verdict::Reject).unwrap(),
+            serde_json::json!("reject")
+        );
     }
 }

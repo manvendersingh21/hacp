@@ -154,7 +154,7 @@ impl SecureEnvelope {
         if self
             .ts
             .as_deref()
-            .is_some_and(|s| chrono::DateTime::parse_from_rfc3339(s).is_err())
+            .is_some_and(|s| !matches!(s.as_bytes().get(10), Some(b'T' | b't')) || chrono::DateTime::parse_from_rfc3339(s).is_err())
         {
             return Err(bad);
         }

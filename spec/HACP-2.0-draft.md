@@ -113,7 +113,9 @@ Every digest in the protocol is taken over the **canonical form** of a JSON valu
 - Object members sorted by key, byte-wise over the UTF-8 encoding, ascending.
 - Numbers MUST be integers in canonical form. Non-integer numbers are forbidden in any object
   that is digested. Quantities that are naturally fractional are carried as strings with an
-  explicit unit.
+  explicit unit. Integers have arbitrary precision with no i64/u64 range bound.
+  Decimal integer tokens MUST be rendered exactly, except `-0` becomes `0`;
+  fractional and exponent notation MUST be rejected, even for integral values.
 - Strings escape only `"` `\` and control characters below 0x20; controls use `\uXXXX` with
   lowercase hex. Everything else is literal UTF-8.
 - Timestamps are RFC 3339, UTC (`Z`), seconds precision, no fractional part:
@@ -122,6 +124,9 @@ Every digest in the protocol is taken over the **canonical form** of a JSON valu
 - Digest: SHA-256 over the canonical UTF-8 encoding, encoded as 64 lowercase hex characters.
 
 ### 5.2 Envelope
+
+`in_reply_to` MAY be absent or null when not replying. Serializers MUST emit
+explicit null for that case; parsing an explicit null MUST preserve it.
 
 The wire unit is carried from 1.1 §5, extended with session correlation:
 
@@ -161,6 +166,10 @@ Deliberately absent: any `execute` kind. EXECUTE is a contract lifecycle state (
 implicit on freeze. An implementation wanting to *notify* may send an informational kind of its
 own — unknown kinds are delivered, never rejected (carried from 1.1 §6) — but no conformance
 vector may require one.
+
+Capability tokens MUST contain 1–32 ASCII lowercase letters, digits, or hyphens,
+with at most one `/` separator, which MUST NOT be first or last. This permits
+versioned profiles such as `hive-recursive-pairwise/1`.
 
 ## 6. Sessions and capability negotiation *(normative)* — §②
 
@@ -261,7 +270,8 @@ a valid terminal, recorded with the full negotiation transcript as evidence.
 ### 7.4 Bounded negotiation *(carried from 1.1)*
 
 Silence does not consent. Each contract carries `max_rounds` and `max_amendments`; reaching
-either bound without agreement is `NO_AGREEMENT`, never an implicit freeze. The same
+the round bound without agreement follows the exhaustion rules below, never an implicit
+freeze. The amendment count bounds proposals as specified in §7.6. The same
 participant MUST NOT counter twice consecutively. During a post-freeze amendment, round or
 deadline exhaustion returns to `EXECUTING` on the current immutable revision unless both
 participants took part in that amendment negotiation; only bilateral exhaustion is
@@ -286,6 +296,9 @@ participants took part in that amendment negotiation; only bilateral exhaustion 
 Post-freeze change is an **Amendment**: a proposed revision N+1 negotiated through the same
 bounded loop as 7.3 (states `AMENDING`), then re-frozen with a new digest. References to "the
 contract" always name a revision digest; history is never rewritten.
+An agreed amendment reaching `max_amendments` MUST freeze and remain executable.
+Once the bound is reached, further amendment proposals MUST be refused without
+leaving `EXECUTING` or changing the frozen revision.
 
 ### 7.7 Withdrawal
 
@@ -301,6 +314,9 @@ A **Delegation** is a contract with `relationship: delegation`: parent → child
 task, carrying a CapabilityGrant and the declared escalation path.
 
 ### 8.2 CapabilityGrant and monotonic authority
+
+A root charter (no parent grant) MAY name the literal `deployment` as its grantor;
+all other grantors and all grantees MUST be agent URNs.
 
 A **CapabilityGrant** names grantor, grantee, an authority scope set, a validity window, and a
 `delegable` flag per scope element. **Inviolable rule:**
@@ -349,10 +365,10 @@ signatures. It is produced by the performing side and consumed by verification. 
 ### 9.3 Verification
 
 A **Verification** is a verdict record: verifier, subject submission, contract revision digest,
-verdict (`accepted | rework | rejected`), mechanical checks run, reasons for anything a machine
-did not decide alone. Verifiers MAY attest recursively: a supervisor's verification of an
-integration may reference children's verification records — attestation composes, authority
-does not (ADR-0001 §5).
+verdict (`accept | rework | reject` — the wire form; `rework` alone carries a `scope`), mechanical
+checks run, reasons for anything a machine did not decide alone. Verifiers MAY attest
+recursively: a supervisor's verification of an integration may reference children's
+verification records — attestation composes, authority does not (ADR-0001 §5).
 
 ### 9.4 Evidence over signals *(Phase S finding)*
 
@@ -523,7 +539,8 @@ preserve. They do not add a model, transport, or organizational topology to Core
 - **Agreement (§7):** each acceptance binds the canonical digest of the accepted
   terms. Both acceptances and the freeze must name identical canonical content.
   Counteroffers clear prior acceptance, including during amendment negotiation;
-  amendment bounds and deadlines terminate as `NoAgreement`. A malformed or
+  amendment proposals at the bound are refused while execution continues;
+  negotiation deadlines follow the bilateral-participation rule in §7.4. A malformed or
   mismatched acceptance does not record a vote. Formation requires an active session.
 - **Grants (§8):** a derived grant is effective only while every ancestor is open.
   Its effective time window is the intersection of its declared window with all
