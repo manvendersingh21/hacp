@@ -123,7 +123,18 @@ Mutual authentication (signatures cover both ephemerals, both nonces, URNs,
 and the session id — no swap or cross-session reuse without breaking one) and
 forward secrecy (ephemeral DH only). Replayed/flooded hellos are bounded:
 **at most 4 pending sessions per peer** (oldest evicted); an evicted hello
-fails at the first `msg` and must re-run.
+fails at the first `msg` and must re-run. A guardian MUST answer an
+authenticated hello at most once per `(hacp_session, hello signature)` while
+that signature is in its bounded replay history; this history is independent
+of pending and `AckSent` session eviction. Each edge scan MUST finish its
+handshake snapshot before discovering and scanning established-session message
+directories, so an accumulating hello stream cannot starve message delivery.
+
+The observed `.hacp/session.json` is untrusted input. A guardian MUST open it
+with `O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC`, validate the opened descriptor as a
+regular file before reading, and return `ContractMismatch` for any other file
+type. In particular, a FIFO at that path must fail closed without blocking the
+guardian request loop.
 
 ```mermaid
 sequenceDiagram
