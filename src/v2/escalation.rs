@@ -155,9 +155,19 @@ impl Escalation {
         if self.stage != EscalationStage::Raised {
             return Err(EscalationError::NotRaised);
         }
-        let lca = org
+        let mut lca = org
             .lca(&self.parties[0], &self.parties[1])
             .ok_or(EscalationError::NoLca)?;
+
+        // V3: referral must actually climb above the stage-one mediator when
+        // the LCA would otherwise be that same mediator (common for siblings).
+        // If the stage-one mediator is already the root (has no supervisor),
+        // referral stays there.
+        if self.mediator.as_deref() == Some(lca.as_str()) {
+            if let Some(parent) = org.parent_of.get(&lca).cloned() {
+                lca = parent;
+            }
+        }
         self.mediator = Some(lca);
         self.stage = EscalationStage::Referred;
         Ok(())
@@ -298,7 +308,7 @@ mod tests {
         )
         .unwrap();
         esc.refer(&org()).unwrap();
-        assert_eq!(esc.mediator.as_deref(), Some(urn("p1").as_str()));
+        assert_eq!(esc.mediator.as_deref(), Some(urn("root").as_str()));
         assert_eq!(esc.stage_kind(), "escalation.referred");
         esc.resolve(Ruling::Reassign { to: urn("c3") }).unwrap();
         assert_eq!(esc.stage, EscalationStage::Resolved);

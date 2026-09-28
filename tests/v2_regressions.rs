@@ -852,25 +852,27 @@ mod tests {
         use hacp::v2::{Escalation, EscalationError, EscalationStage, EscalationSubject};
         let root = "urn:hacp:agent:root";
         let parent = "urn:hacp:agent:p1";
-        let child = "urn:hacp:agent:c1";
+        let c1 = "urn:hacp:agent:c1";
+        let c2 = "urn:hacp:agent:c2";
         let mut org = OrgChart::default();
         org.parent_of.insert(parent.into(), root.into());
-        org.parent_of.insert(child.into(), parent.into());
+        org.parent_of.insert(c1.into(), parent.into());
+        org.parent_of.insert(c2.into(), parent.into());
 
-        // Parent/child is legal at stage one, mediated by the parent's supervisor.
+        // Siblings are legal at stage one, mediated by the shared supervisor...
         let (mut esc, mediator) = Escalation::raise(
             &org,
             "esc-0000000000v3",
-            parent,
-            child,
+            c1,
+            c2,
             EscalationSubject::Task { task_id: "t-v3".into() },
             T0,
         )
         .unwrap();
-        assert_eq!(mediator, root);
+        assert_eq!(mediator, parent);
         assert_eq!(esc.stage, EscalationStage::Raised);
 
-        // Referral stops at the LCA (the lowest common supervisor): still root, never a party.
+        // ...but referral must climb above the stage-one mediator to the LCA.
         esc.refer(&org).unwrap();
         assert_eq!(esc.mediator.as_deref(), Some(root));
 
@@ -879,12 +881,12 @@ mod tests {
             Escalation::raise(
                 &org,
                 "esc-0000000000v3b",
-                child,
-                child,
+                c1,
+                c1,
                 EscalationSubject::Task { task_id: "t-v3".into() },
                 T0,
             ),
-            Err(EscalationError::SameParty(child.into()))
+            Err(EscalationError::SameParty(c1.into()))
         );
     }
 
