@@ -65,7 +65,7 @@ impl HiveProfile {
 
     /// §13 sibling preauthorization: a supervisor MAY issue a standing
     /// `cross-branch/<class>` grant to one child, at its discretion, so
-    /// siblings can form collaboration sessions for named task classes
+    /// the named sibling pair can form collaboration sessions for a task class
     /// without a per-session LCA ruling (§10.2 path two). The supervisor
     /// must itself hold the scope delegable.
     pub fn authorize_siblings(
@@ -74,15 +74,20 @@ impl HiveProfile {
         org: &OrgChart,
         supervisor: &str,
         child: &str,
+        peer: &str,
         task_class: &str,
         grant_id: &str,
         valid_from: &str,
         valid_until: &str,
     ) -> Result<(), super::grant::GrantError> {
-        if !org.children(supervisor).iter().any(|c| c == child) {
+        let children = org.children(supervisor);
+        if child == peer
+            || !children.iter().any(|c| c == child)
+            || !children.iter().any(|c| c == peer)
+        {
             return Err(super::grant::GrantError::ChainMismatch {
                 grantor: supervisor.to_string(),
-                grantee: child.to_string(),
+                grantee: peer.to_string(),
             });
         }
         org.validate()?;
@@ -105,6 +110,7 @@ impl HiveProfile {
                 valid_from: valid_from.to_string(),
                 valid_until: valid_until.to_string(),
                 parent: Some(parent),
+                peer: Some(peer.to_string()),
             },
             valid_from,
         )
@@ -190,6 +196,7 @@ mod tests {
                 &org,
                 &urn("p1"),
                 &urn("c1"),
+                &urn("c2"),
                 "review",
                 "g-000000000002",
                 T0,
@@ -209,6 +216,7 @@ mod tests {
                 &org,
                 &urn("p1"),
                 &urn("c9"),
+                &urn("c2"),
                 "review",
                 "g-000000000003",
                 T0,

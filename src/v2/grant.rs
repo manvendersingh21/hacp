@@ -48,6 +48,9 @@ pub struct CapabilityGrant {
     pub valid_until: String,
     /// Parent grant id; `None` for a deployment charter.
     pub parent: Option<String>,
+    /// Optional peer restriction inherited by preauthorization descendants.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub peer: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -113,6 +116,7 @@ impl CapabilityGrant {
             valid_from: valid_from.to_string(),
             valid_until: valid_until.to_string(),
             parent: None,
+            peer: None,
         };
         g.check_shape()?;
         Ok(g)
@@ -124,6 +128,10 @@ impl CapabilityGrant {
             .map_err(|_| GrantError::BadUrn(self.grantor.clone()))?;
         super::envelope::agent_urn::parse(&self.grantee)
             .map_err(|_| GrantError::BadUrn(self.grantee.clone()))?;
+        if let Some(peer) = &self.peer {
+            super::envelope::agent_urn::parse(peer)
+                .map_err(|_| GrantError::BadUrn(peer.clone()))?;
+        }
         validate_timestamp(&self.valid_from)
             .map_err(|_| GrantError::BadTimestamp(self.valid_from.clone()))?;
         validate_timestamp(&self.valid_until)
@@ -158,6 +166,38 @@ pub struct GrantLedger {
 }
 
 impl GrantLedger {
+    fn preauthorization_allows_peer(
+        &self,
+        grant_id: &str,
+        org: &OrgChart,
+        requester: &str,
+        peer: &str,
+    ) -> Result<bool, GrantError> {
+        let mut current = Some(grant_id);
+        let mut restricted = false;
+        while let Some(id) = current {
+            let grant = self
+                .grants
+                .get(id)
+                .ok_or_else(|| GrantError::UnknownGrant(id.into()))?;
+            if let Some(bound_peer) = &grant.peer {
+                restricted = true;
+                if bound_peer != peer {
+                    return Ok(false);
+                }
+            }
+            current = grant.parent.as_deref();
+        }
+        if restricted
+            && (requester == peer
+                || org.parent_of.get(requester).is_none()
+                || org.parent_of.get(requester) != org.parent_of.get(peer))
+        {
+            return Ok(false);
+        }
+        Ok(true)
+    }
+
     /// Enforce the inviolable rule and record the grant. For a child grant
     /// (`parent` set): the parent must exist, be open at `at`, have the
     /// declared grantor as its grantee, and carry every requested scope as
@@ -423,10 +463,12 @@ impl CollaborationPermit {
     /// §10.2, path two: preauthorization — a standing `cross-branch/<class>`
     /// grant substitutes for the LCA's per-session ruling.
     pub fn by_preauthorization(
+        org: &OrgChart,
         ledger: &GrantLedger,
         request: &CollaborationRequest,
         at: &str,
     ) -> Result<Self, CrossBranchError> {
+        org.validate()?;
         request.validate()?;
         validate_timestamp(at).map_err(|_| GrantError::BadTimestamp(at.into()))?;
         let grant_id = ledger
@@ -435,6 +477,21 @@ impl CollaborationPermit {
                 requester: request.requester.clone(),
                 class: request.task_class.clone(),
             })?;
+        let grant = &ledger.grants[&grant_id];
+        if !org.chain(&request.peer).contains(&grant.grantor)
+            || !ledger.preauthorization_allows_peer(
+                &grant_id,
+                org,
+                &request.requester,
+                &request.peer,
+            )?
+        {
+            return Err(GrantError::ChainMismatch {
+                grantor: grant.grantor.clone(),
+                grantee: request.peer.clone(),
+            }
+            .into());
+        }
         let mut expires = request.expires.clone();
         let mut current = Some(grant_id.as_str());
         while let Some(id) = current {
@@ -511,8 +568,19 @@ impl CollaborationPermit {
                 }
             }
             PermitBasis::Preauthorization { grant_id } => {
+                let grantor_authorizes_peer = ledger
+                    .grants
+                    .get(grant_id)
+                    .is_some_and(|grant| org.chain(&self.peer).contains(&grant.grantor))
+                    && ledger.preauthorization_allows_peer(
+                        grant_id,
+                        org,
+                        &self.requester,
+                        &self.peer,
+                    )?;
                 if self.issued_by != self.requester
                     || !ledger.is_open(grant_id, at)?
+                    || !grantor_authorizes_peer
                     || !ledger.held_by(&self.requester, at).iter().any(|g| {
                         g.grant_id == *grant_id
                             && g.scopes
@@ -611,6 +679,7 @@ mod tests {
             valid_from: T0.into(),
             valid_until: T1.into(),
             parent: Some("g-000000000001".into()),
+            peer: None,
         };
         assert_eq!(
             ledger.issue(child, T0),
@@ -653,6 +722,7 @@ mod tests {
                     valid_from: T0.into(),
                     valid_until: T1.into(),
                     parent: Some("g-000000000001".into()),
+                    peer: None,
                 },
                 T0,
             )
@@ -670,6 +740,7 @@ mod tests {
             valid_from: T0.into(),
             valid_until: T1.into(),
             parent: Some("g-000000000002".into()),
+            peer: None,
         };
         assert_eq!(
             ledger.issue(bad, T0),
@@ -705,6 +776,7 @@ mod tests {
                     valid_from: T0.into(),
                     valid_until: T1.into(),
                     parent: Some("g-000000000001".into()),
+                    peer: None,
                 },
                 T0,
             )
@@ -723,6 +795,7 @@ mod tests {
             valid_from: T0.into(),
             valid_until: T1.into(),
             parent: Some("g-000000000001".into()),
+            peer: None,
         };
         assert_eq!(
             ledger.issue(child, T0),
@@ -808,22 +881,41 @@ mod tests {
         // Preauthorization: a standing cross-branch/review grant for c1.
         let mut ledger = GrantLedger::default();
         assert!(matches!(
-            CollaborationPermit::by_preauthorization(&ledger, &request, T0),
+            CollaborationPermit::by_preauthorization(&org, &ledger, &request, T0),
             Err(CrossBranchError::NoPreauthorization { .. })
         ));
         ledger
             .issue(
                 root_grant(
-                    &urn("c1"),
+                    &urn("root"),
                     vec![ScopeElement {
                         name: "cross-branch/review".into(),
-                        delegable: false,
+                        delegable: true,
                     }],
                 ),
                 T0,
             )
             .unwrap();
-        let preauth = CollaborationPermit::by_preauthorization(&ledger, &request, T0).unwrap();
+        ledger
+            .issue(
+                CapabilityGrant {
+                    grant_id: "g-000000000002".into(),
+                    grantor: urn("root"),
+                    grantee: urn("c1"),
+                    scopes: vec![ScopeElement {
+                        name: "cross-branch/review".into(),
+                        delegable: false,
+                    }],
+                    valid_from: T0.into(),
+                    valid_until: T1.into(),
+                    parent: Some("g-000000000001".into()),
+                    peer: None,
+                },
+                T0,
+            )
+            .unwrap();
+        let preauth =
+            CollaborationPermit::by_preauthorization(&org, &ledger, &request, T0).unwrap();
         assert!(matches!(
             preauth.basis,
             PermitBasis::Preauthorization { .. }

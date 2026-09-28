@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix V1: constrain preauthorized collaboration peers to the grantor's authority at issuance and admission; recursive-pairwise preauthorization additionally binds and enforces one named sibling peer. This adds `CapabilityGrant::peer` and makes the public `CollaborationPermit::by_preauthorization` and `HiveProfile::authorize_siblings` signatures breaking API changes.
+- Fix V2: reject consecutive counters by one participant and preserve the current executing revision when a unilateral amendment exhausts its rounds or deadline.
 - Fix HACP Secure S1 hello amplification/livelock by answering each
   `(context, hello signature)` once through a bounded replay history that
   survives session eviction, and by scanning message directories after the

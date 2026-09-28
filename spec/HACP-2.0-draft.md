@@ -261,7 +261,11 @@ a valid terminal, recorded with the full negotiation transcript as evidence.
 ### 7.4 Bounded negotiation *(carried from 1.1)*
 
 Silence does not consent. Each contract carries `max_rounds` and `max_amendments`; reaching
-either bound without agreement is `NO_AGREEMENT`, never an implicit freeze.
+either bound without agreement is `NO_AGREEMENT`, never an implicit freeze. The same
+participant MUST NOT counter twice consecutively. During a post-freeze amendment, round or
+deadline exhaustion returns to `EXECUTING` on the current immutable revision unless both
+participants took part in that amendment negotiation; only bilateral exhaustion is
+`NO_AGREEMENT`.
 
 ### 7.5 Freeze, EXECUTE, SUBMIT
 
@@ -531,8 +535,13 @@ preserve. They do not add a model, transport, or organizational topology to Core
   cannot extend beyond any backing ancestor's expiry. Before session admission,
   the binding checks the exact pair, requested class, canonical expiry and current
   authority basis: the recorded LCA still rules those branches, or the requester
-  still holds the named open preauthorization grant. A stored permit alone is not
-  proof that its authority remains valid.
+  still holds the named open preauthorization grant. A preauthorized peer MUST be
+  within the grantor's organizational chain, checked both when issuing a permit and
+  admitting its session. Under the recursive-pairwise profile, standing
+  preauthorization carries a `peer` restriction and is issued only for that named
+  peer, which MUST be the requester's sibling. Peer restrictions on a grant or any
+  ancestor are enforced both when issuing a permit and admitting its session.
+  A stored permit alone is not proof that its authority remains valid.
 - **Verification (§9):** an artifact's `contract_revision` is a 64-character
   lowercase SHA-256 digest. An accept requires artifacts and a nonempty set of
   passing checks, with no failed check. In this record format every listed check
