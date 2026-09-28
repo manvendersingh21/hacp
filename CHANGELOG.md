@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Fix HACP Secure S1 hello amplification/livelock by answering each
+  `(context, hello signature)` once through a bounded replay history that
+  survives session eviction, and by scanning message directories after the
+  handshake phase. Fix S2 guardian hangs on a hostile `.hacp/session.json` by
+  opening it nonblocking without following symlinks and rejecting non-regular
+  files as `ContractMismatch`.
 - Add the optional HACP Secure layer: guardian-held key custody, secure
   envelope transport, signatures, and replay protection behind a `guardian`
   Cargo feature, plus the `hacp-secure` agent CLI and the frozen

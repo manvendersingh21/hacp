@@ -396,17 +396,25 @@ impl Guardian {
     fn contract_view(&self, context: &str) -> Result<ContractView, SecureError> {
         // .hacp is an untrusted observation, never an identity/policy source.
         let path = self.project.join(".hacp/session.json");
-        let f = match OpenOptions::new()
-            .read(true)
-            .custom_flags(libc::O_NOFOLLOW)
-            .open(path)
-        {
-            Ok(f) => f,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                return Ok(ContractView::Bootstrap)
-            }
-            Err(_) => return Err(SecureError::ContractMismatch),
+        let cpath = std::ffi::CString::new(path.as_os_str().as_encoded_bytes())
+            .map_err(|_| SecureError::ContractMismatch)?;
+        let fd = unsafe {
+            libc::open(
+                cpath.as_ptr(),
+                libc::O_RDONLY | libc::O_NONBLOCK | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+            )
         };
+        if fd < 0 {
+            return match std::io::Error::last_os_error().kind() {
+                std::io::ErrorKind::NotFound => Ok(ContractView::Bootstrap),
+                _ => Err(SecureError::ContractMismatch),
+            };
+        }
+        let f = unsafe { File::from_raw_fd(fd) };
+        let metadata = f.metadata().map_err(|_| SecureError::ContractMismatch)?;
+        if !metadata.is_file() {
+            return Err(SecureError::ContractMismatch);
+        }
         let mut bytes = Vec::new();
         f.take(LIMIT + 1)
             .read_to_end(&mut bytes)
@@ -712,131 +720,144 @@ impl Guardian {
         let mut rejected = Vec::new();
         let mut aborted = Vec::new();
         let scope = encode_hex(&Sha256::digest(context.as_bytes()));
-        let mut groups = vec![self.read_edges(&["handshakes", &scope])];
-        for s in self
-            .manager
-            .sessions()
-            .into_iter()
-            .filter(|s| s.hacp_session == context)
-        {
-            groups.push(self.read_edges(&[&s.sid]));
-        }
         let local = self.local();
-        for (file, raw) in groups.into_iter().flatten() {
-            let result = (|| {
-                let bytes = raw?;
-                let parsed = SecureEnvelope::from_json(&bytes);
-                let env = match parsed {
-                    Ok(e) => e,
-                    Err(e) => {
-                        let object: Option<Value> = serde_json::from_slice(&bytes).ok();
-                        let secure = object.as_ref().is_some_and(|v| {
-                            v.get("v").is_some()
-                                || matches!(
-                                    v.get("kind").and_then(Value::as_str),
-                                    Some("hello" | "ack" | "msg")
-                                )
-                        });
-                        if !secure {
-                            // Raw sender fields are unauthenticated. They cannot select a
-                            // weaker pin in a context that might require secure delivery.
-                            if self.pins.values().any(|pin| pin.require_secure) {
-                                self.abort_context(context);
-                                return Err(SecureError::DowngradeDetected);
-                            }
-                            let from = object
-                                .as_ref()
-                                .and_then(|v| v.get("from"))
-                                .and_then(Value::as_str);
-                            let to = object
-                                .as_ref()
-                                .and_then(|v| v.get("to"))
-                                .and_then(Value::as_str);
-                            let pin = from.and_then(|urn| self.pins.get(urn));
-                            if pin.is_some_and(|p| !p.require_secure) && to == Some(local.as_str())
-                            {
-                                delivered.push(json!({"sid":"","from":from,"seq":0,"contract":"","payload_b64":STANDARD.encode(&bytes)}));
-                                return Ok(());
-                            }
-                            if pin.is_some_and(|p| p.require_secure)
-                                || self.pins.values().any(|p| p.require_secure)
-                            {
-                                self.abort_context(context);
-                                return Err(SecureError::DowngradeDetected);
-                            }
-                            return Err(SecureError::IdentityMismatch);
-                        }
-                        return Err(e);
-                    }
-                };
-                if env.from == local && env.to != local {
-                    return Ok(());
-                } // Our own outbound files on the shared edge.
-                match env.kind {
-                    Kind::Hello => {
-                        let pin = self
-                            .pins
-                            .get(&env.from)
-                            .ok_or(SecureError::IdentityMismatch)?;
-                        let ack =
-                            self.manager
-                                .respond(context, &env, &bytes32(&pin.ed25519_pub)?)?;
-                        self.write_handshake(context, &ack)?;
-                    }
-                    Kind::Ack => {
-                        self.manager.complete(context, &env)?;
-                    }
-                    Kind::Msg => {
-                        let sid = env.sid.as_deref().ok_or(SecureError::SchemaViolation)?;
-                        let info = self.manager.info(sid)?;
-                        if info.hacp_session != context {
-                            return Err(SecureError::SessionUnknown);
-                        }
-                        let view = match self.contract_view(context) {
-                            Ok(v) => v,
-                            Err(e) => {
-                                let _ = self.transport.close(&mut self.manager, sid);
-                                aborted.push(json!({"sid":sid,"error":e}));
-                                return Err(e);
-                            }
-                        };
-                        let high = self.transport.status(sid).recv_high;
-                        let report = self.transport.receive(&mut self.manager, &env, &view);
-                        for error in &report.rejected {
-                            let reason = if *error == SecureError::ReplayRejected {
-                                Some(if high.is_some_and(|h| env.seq.is_some_and(|n| n < h)) {
-                                    "regression"
-                                } else {
-                                    "duplicate"
-                                })
-                            } else {
-                                None
-                            };
-                            self.audit_reason(*error, Some(sid), reason);
-                        }
-                        if let Some(error) = report.aborted {
-                            self.audit(error, Some(sid));
-                        }
-                        Self::append_report(
-                            report,
-                            &file,
-                            &mut delivered,
-                            &mut held,
-                            &mut rejected,
-                            &mut aborted,
-                            sid,
-                        );
-                    }
+        // Complete a bounded snapshot of handshake work first, then discover
+        // message directories from the resulting sessions. Persistent hello
+        // traffic therefore cannot keep message processing behind handshakes.
+        for phase in 0..2 {
+            let mut groups = Vec::new();
+            if phase == 0 {
+                groups.push(self.read_edges(&["handshakes", &scope]));
+            } else {
+                for s in self
+                    .manager
+                    .sessions()
+                    .into_iter()
+                    .filter(|s| s.hacp_session == context)
+                {
+                    groups.push(self.read_edges(&[&s.sid]));
                 }
-                Ok(())
-            })();
-            if let Err(e) = result {
-                self.audit(e, None);
-                rejected.push(json!({"file":file,"error":e}));
-                if e == SecureError::DowngradeDetected {
-                    aborted.push(json!({"sid":"","error":e}));
-                    delivered.clear();
-                    break;
+            }
+            for (file, raw) in groups.into_iter().flatten() {
+                let result = (|| {
+                    let bytes = raw?;
+                    let parsed = SecureEnvelope::from_json(&bytes);
+                    let env = match parsed {
+                        Ok(e) => e,
+                        Err(e) => {
+                            let object: Option<Value> = serde_json::from_slice(&bytes).ok();
+                            let secure = object.as_ref().is_some_and(|v| {
+                                v.get("v").is_some()
+                                    || matches!(
+                                        v.get("kind").and_then(Value::as_str),
+                                        Some("hello" | "ack" | "msg")
+                                    )
+                            });
+                            if !secure {
+                                // Raw sender fields are unauthenticated. They cannot select a
+                                // weaker pin in a context that might require secure delivery.
+                                if self.pins.values().any(|pin| pin.require_secure) {
+                                    self.abort_context(context);
+                                    return Err(SecureError::DowngradeDetected);
+                                }
+                                let from = object
+                                    .as_ref()
+                                    .and_then(|v| v.get("from"))
+                                    .and_then(Value::as_str);
+                                let to = object
+                                    .as_ref()
+                                    .and_then(|v| v.get("to"))
+                                    .and_then(Value::as_str);
+                                let pin = from.and_then(|urn| self.pins.get(urn));
+                                if pin.is_some_and(|p| !p.require_secure)
+                                    && to == Some(local.as_str())
+                                {
+                                    delivered.push(json!({"sid":"","from":from,"seq":0,"contract":"","payload_b64":STANDARD.encode(&bytes)}));
+                                    return Ok(());
+                                }
+                                if pin.is_some_and(|p| p.require_secure)
+                                    || self.pins.values().any(|p| p.require_secure)
+                                {
+                                    self.abort_context(context);
+                                    return Err(SecureError::DowngradeDetected);
+                                }
+                                return Err(SecureError::IdentityMismatch);
+                            }
+                            return Err(e);
+                        }
+                    };
+                    if env.from == local && env.to != local {
+                        return Ok(());
+                    } // Our own outbound files on the shared edge.
+                    match env.kind {
+                        Kind::Hello => {
+                            let pin = self
+                                .pins
+                                .get(&env.from)
+                                .ok_or(SecureError::IdentityMismatch)?;
+                            if let Some(ack) = self.manager.respond_once(
+                                context,
+                                &env,
+                                &bytes32(&pin.ed25519_pub)?,
+                            )? {
+                                self.write_handshake(context, &ack)?;
+                            }
+                        }
+                        Kind::Ack => {
+                            self.manager.complete(context, &env)?;
+                        }
+                        Kind::Msg => {
+                            let sid = env.sid.as_deref().ok_or(SecureError::SchemaViolation)?;
+                            let info = self.manager.info(sid)?;
+                            if info.hacp_session != context {
+                                return Err(SecureError::SessionUnknown);
+                            }
+                            let view = match self.contract_view(context) {
+                                Ok(v) => v,
+                                Err(e) => {
+                                    let _ = self.transport.close(&mut self.manager, sid);
+                                    aborted.push(json!({"sid":sid,"error":e}));
+                                    return Err(e);
+                                }
+                            };
+                            let high = self.transport.status(sid).recv_high;
+                            let report = self.transport.receive(&mut self.manager, &env, &view);
+                            for error in &report.rejected {
+                                let reason = if *error == SecureError::ReplayRejected {
+                                    Some(if high.is_some_and(|h| env.seq.is_some_and(|n| n < h)) {
+                                        "regression"
+                                    } else {
+                                        "duplicate"
+                                    })
+                                } else {
+                                    None
+                                };
+                                self.audit_reason(*error, Some(sid), reason);
+                            }
+                            if let Some(error) = report.aborted {
+                                self.audit(error, Some(sid));
+                            }
+                            Self::append_report(
+                                report,
+                                &file,
+                                &mut delivered,
+                                &mut held,
+                                &mut rejected,
+                                &mut aborted,
+                                sid,
+                            );
+                        }
+                    }
+                    Ok(())
+                })();
+                if let Err(e) = result {
+                    self.audit(e, None);
+                    rejected.push(json!({"file":file,"error":e}));
+                    if e == SecureError::DowngradeDetected {
+                        aborted.push(json!({"sid":"","error":e}));
+                        delivered.clear();
+                        break;
+                    }
                 }
             }
         }
@@ -966,6 +987,10 @@ impl Guardian {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "secure_regressions.rs"]
+mod secure_regressions;
 
 #[cfg(test)]
 mod tests {

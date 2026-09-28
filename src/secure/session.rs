@@ -42,8 +42,14 @@ pub struct SessionManager {
     identity: IdentitySecret,
     pending: VecDeque<Pending>,
     active: BTreeMap<String, Session>,
+    // Authenticated hello signatures already answered by this guardian. This is
+    // deliberately independent of `active`, so AckSent eviction cannot make an
+    // old hello eligible for another response and restart the eviction cycle.
+    seen_hellos: BTreeMap<(String, String), ()>,
+    seen_hello_order: VecDeque<(String, String)>,
     order: u64,
 }
+const SEEN_HELLO_LIMIT: usize = 1024;
 pub(super) fn valid_urn(urn: &str) -> bool {
     let Some(s) = urn.strip_prefix("urn:hacp:agent:") else {
         return false;
@@ -95,6 +101,8 @@ impl SessionManager {
             identity,
             pending: VecDeque::new(),
             active: BTreeMap::new(),
+            seen_hellos: BTreeMap::new(),
+            seen_hello_order: VecDeque::new(),
             order: 0,
         })
     }
@@ -199,6 +207,7 @@ impl SessionManager {
         if !crypto::verify(pin, &transcript, required(&hello.sig)?) {
             return Err(SecureError::BadHandshakeSignature);
         }
+        self.remember_hello(hacp_session, required(&hello.sig)?);
         // Exact authenticated hello retransmission reuses its public ack, never its DH scalar.
         if let Some(s) = self.active.values().find(|s| {
             !s.initiator
@@ -251,6 +260,45 @@ impl SessionManager {
             },
         );
         Ok(ack)
+    }
+    /// Respond to an authenticated hello only if this manager has never
+    /// answered the same (context, signature). Guardian edge scans use this to
+    /// make immutable hello files idempotent even after AckSent eviction.
+    pub(super) fn respond_once(
+        &mut self,
+        hacp_session: &str,
+        hello: &SecureEnvelope,
+        pin: &[u8; 32],
+    ) -> Result<Option<SecureEnvelope>, SecureError> {
+        hello.validate()?;
+        context_ok(hacp_session)?;
+        if hello.kind != Kind::Hello {
+            return Err(SecureError::SchemaViolation);
+        }
+        if hello.to != self.local || hello.from == self.local {
+            return Err(SecureError::IdentityMismatch);
+        }
+        let transcript = hello.hello_signing_input(hacp_session)?;
+        if !crypto::verify(pin, &transcript, required(&hello.sig)?) {
+            return Err(SecureError::BadHandshakeSignature);
+        }
+        let key = (hacp_session.to_owned(), required(&hello.sig)?.to_owned());
+        if self.seen_hellos.contains_key(&key) {
+            return Ok(None);
+        }
+        self.respond(hacp_session, hello, pin).map(Some)
+    }
+    fn remember_hello(&mut self, hacp_session: &str, signature: &str) {
+        let key = (hacp_session.to_owned(), signature.to_owned());
+        if self.seen_hellos.insert(key.clone(), ()).is_some() {
+            return;
+        }
+        self.seen_hello_order.push_back(key);
+        while self.seen_hello_order.len() > SEEN_HELLO_LIMIT {
+            if let Some(oldest) = self.seen_hello_order.pop_front() {
+                self.seen_hellos.remove(&oldest);
+            }
+        }
     }
     pub fn complete(
         &mut self,
