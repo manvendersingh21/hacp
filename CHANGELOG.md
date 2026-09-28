@@ -15,6 +15,7 @@
 - Fix V3: define LCA as the lowest common supervisor (never a party); escalation `raise` accepts direct parent/child disputes mediated by the parent's supervisor and rejects `a == b`.
 - Fix V4: delegation contracts carry `grant_id`; contract formation validates the referenced grant is open, matches the two participants, and that `escalation_path` matches the grantor's declared org chain.
 - Fix V7: add `ContractLimits.max_rework`; once rework is exhausted, further `rework` verdicts transition the contract to `Rejected`.
+- Test V1: add a regression test showing that an unrestricted (`peer: None`) preauthorization reaches only peers inside the grantor's org chain. Issuance refuses peers on another branch, the root, and unknown agents, and admission refuses a forged permit. Tests only; no behavior change.
 - Fix HACP Secure S1 hello amplification/livelock by answering each
   `(context, hello signature)` once through a bounded replay history that
   survives session eviction, and by scanning message directories after the
