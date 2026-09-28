@@ -538,7 +538,9 @@ preserve. They do not add a model, transport, or organizational topology to Core
   still holds the named open preauthorization grant. A preauthorized peer MUST be
   within the grantor's organizational chain, checked both when issuing a permit and
   admitting its session. Under the recursive-pairwise profile, standing
-  preauthorization is issued only for a named peer that is the requester's sibling.
+  preauthorization carries a `peer` restriction and is issued only for that named
+  peer, which MUST be the requester's sibling. Peer restrictions on a grant or any
+  ancestor are enforced both when issuing a permit and admitting its session.
   A stored permit alone is not proof that its authority remains valid.
 - **Verification (§9):** an artifact's `contract_revision` is a 64-character
   lowercase SHA-256 digest. An accept requires artifacts and a nonempty set of

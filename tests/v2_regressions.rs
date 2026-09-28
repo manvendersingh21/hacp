@@ -199,6 +199,7 @@ mod tests {
                     valid_from: T0.into(),
                     valid_until: child_end.into(),
                     parent: Some("g-000000000001".into()),
+                    peer: None,
                 },
                 T0,
             )
@@ -400,6 +401,7 @@ mod tests {
             valid_from: T0.into(),
             valid_until: T2.into(),
             parent: Some("g-000000000002".into()),
+            peer: None,
         };
         assert!(l.issue(grandchild, T0).is_err());
         assert!(l.held_by(B, T0).is_empty());
@@ -572,6 +574,12 @@ mod tests {
         use hacp::v2::{CollaborationPermit, CollaborationRequest};
         let (mut l, mut org) = cross_branch(true);
         let outsider = "urn:hacp:agent:outsider";
+        let named_sibling = "urn:hacp:agent:c2";
+        let unnamed_sibling = "urn:hacp:agent:c4";
+        let nephew = "urn:hacp:agent:g1";
+        org.parent_of.insert(named_sibling.into(), A.into());
+        org.parent_of.insert(unnamed_sibling.into(), A.into());
+        org.parent_of.insert(nephew.into(), named_sibling.into());
 
         assert!(HiveProfile
             .authorize_siblings(
@@ -593,7 +601,7 @@ mod tests {
                 &org,
                 A,
                 B,
-                "urn:hacp:agent:peer",
+                named_sibling,
                 "review",
                 "g-000000000011",
                 T0,
@@ -609,13 +617,29 @@ mod tests {
         };
         assert!(CollaborationPermit::by_preauthorization(&org, &l, &request, T0).is_err());
 
+        for denied_peer in [nephew, unnamed_sibling] {
+            let mut denied_request = request.clone();
+            denied_request.peer = denied_peer.into();
+            assert!(
+                CollaborationPermit::by_preauthorization(&org, &l, &denied_request, T0).is_err()
+            );
+        }
+
         let mut valid_request = request.clone();
-        valid_request.peer = "urn:hacp:agent:peer".into();
+        valid_request.peer = named_sibling.into();
         let permit =
             CollaborationPermit::by_preauthorization(&org, &l, &valid_request, T0).unwrap();
-        org.parent_of.remove(&valid_request.peer);
+        for denied_peer in [nephew, unnamed_sibling] {
+            let mut forged = permit.clone();
+            forged.peer = denied_peer.into();
+            assert!(forged
+                .authorize_session(&org, &l, B, denied_peer, "review", T0)
+                .is_err());
+        }
+
+        org.parent_of.remove(named_sibling);
         assert!(permit
-            .authorize_session(&org, &l, B, &valid_request.peer, "review", T0)
+            .authorize_session(&org, &l, B, named_sibling, "review", T0)
             .is_err());
     }
 

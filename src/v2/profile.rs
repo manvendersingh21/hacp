@@ -110,6 +110,7 @@ impl HiveProfile {
                 valid_from: valid_from.to_string(),
                 valid_until: valid_until.to_string(),
                 parent: Some(parent),
+                peer: Some(peer.to_string()),
             },
             valid_from,
         )
