@@ -653,6 +653,87 @@ mod tests {
     }
 
     #[test]
+    fn finding_v1_unrestricted_preauthorization_refuses_peer_outside_grantor_chain() {
+        use hacp::v2::{CollaborationPermit, CollaborationRequest};
+        let root = "urn:hacp:agent:root";
+        let p1 = "urn:hacp:agent:p1";
+        let p2 = "urn:hacp:agent:p2";
+        let c1 = "urn:hacp:agent:c1";
+        let c2 = "urn:hacp:agent:c2";
+        let c3 = "urn:hacp:agent:c3";
+        let stranger = "urn:hacp:agent:stranger";
+        let mut org = OrgChart::default();
+        for (child, parent) in [(p1, root), (p2, root), (c1, p1), (c2, p1), (c3, p2)] {
+            org.parent_of.insert(child.into(), parent.into());
+        }
+
+        let mut l = GrantLedger::default();
+        l.issue(
+            CapabilityGrant::charter(
+                "g-0000000000a1",
+                root,
+                p1,
+                vec![ScopeElement {
+                    name: "cross-branch/review".into(),
+                    delegable: true,
+                }],
+                T0,
+                T1,
+            )
+            .unwrap(),
+            T0,
+        )
+        .unwrap();
+        l.issue(
+            CapabilityGrant {
+                grant_id: "g-0000000000a2".into(),
+                grantor: p1.into(),
+                grantee: c1.into(),
+                scopes: vec![ScopeElement {
+                    name: "cross-branch/review".into(),
+                    delegable: false,
+                }],
+                valid_from: T0.into(),
+                valid_until: T1.into(),
+                parent: Some("g-0000000000a1".into()),
+                peer: None,
+            },
+            T0,
+        )
+        .unwrap();
+
+        let request = |peer: &str| CollaborationRequest {
+            request_id: "cr-0000000000a1".into(),
+            requester: c1.into(),
+            peer: peer.into(),
+            task_class: "review".into(),
+            expires: T1.into(),
+        };
+
+        let permit = CollaborationPermit::by_preauthorization(&org, &l, &request(c2), T0)
+            .expect("c2 is inside the grantor p1's chain");
+        permit
+            .authorize_session(&org, &l, c1, c2, "review", T0)
+            .unwrap();
+
+        for outside in [c3, root, stranger] {
+            assert!(
+                CollaborationPermit::by_preauthorization(&org, &l, &request(outside), T0).is_err(),
+                "unrestricted preauthorization reached {outside}, outside grantor p1's chain"
+            );
+        }
+
+        let mut forged = permit.clone();
+        forged.peer = c3.into();
+        assert!(
+            forged
+                .authorize_session(&org, &l, c1, c3, "review", T0)
+                .is_err(),
+            "forged permit admitted {c3}, outside grantor p1's chain"
+        );
+    }
+
+    #[test]
     fn lca_permits_recheck_current_organizational_relationships() {
         use hacp::v2::{CollaborationPermit, CollaborationRequest};
         let (l, mut org) = cross_branch(true);
