@@ -14,7 +14,16 @@ readme = "README.md"
 # reason.
 [dependencies]
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# `arbitrary_precision` (finding V6): the canonical form (spec §5.1) requires
+# integers of any magnitude, matching the independent Python peer (arbitrary
+# precision `int`) and JSON's own number grammar, which has no integer range
+# limit. Without this feature, serde_json falls back to f64 for integers
+# outside i64/u64 range, which loses exact digits and made canon::write_number
+# refuse them outright — a canonical-form disagreement with the spec and the
+# peer. This feature preserves the original decimal text for every number
+# (still parsed/compared correctly for in-range integers and floats), so
+# `write_number` can render huge integers exactly.
+serde_json = { version = "1", features = ["arbitrary_precision"] }
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 schemars = { version = "0.8", features = ["chrono"] }

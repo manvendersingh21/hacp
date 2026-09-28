@@ -138,21 +138,29 @@ fn write_value(value: &Value, path: &str, out: &mut String) -> Result<(), CanonE
 }
 
 fn write_number(n: &serde_json::Number, path: &str, out: &mut String) -> Result<(), CanonError> {
-    // Integers only (§5.1). `as_u64` first so positives render unsigned; `as_i64`
-    // catches negatives; anything else — floats, exponent notation, out-of-range —
-    // is a canonical-form violation, not a rounding decision.
-    if let Some(u) = n.as_u64() {
-        out.push_str(&u.to_string());
-        Ok(())
-    } else if let Some(i) = n.as_i64() {
-        out.push_str(&i.to_string());
-        Ok(())
-    } else {
-        Err(CanonError::NonIntegerNumber {
-            value: n.to_string(),
+    // Integers only (§5.1), of *any* magnitude (finding V6): the spec places
+    // no i64/u64 bound on canonical integers, and the independent Python peer
+    // (arbitrary-precision `int`) accepts them, so a Rust-only i64/u64 ceiling
+    // was a canonical-form disagreement, not a spec rule. With the
+    // `arbitrary_precision` serde_json feature, `Number` keeps the original
+    // decimal text and `is_f64()` is true exactly for values that were written
+    // with a fractional part or exponent — i.e. genuinely non-integer JSON
+    // numbers, in range or out. Integers of any size, including those outside
+    // i64/u64, report `is_f64() == false` and print their exact digits.
+    //
+    // `-0` is handled by construction: serde_json parses it straight to the
+    // integer `0` (no negative-zero integer exists in this representation),
+    // so it renders as plain `0`, matching the peer (Python `int` has no
+    // negative zero either).
+    let text = n.to_string();
+    if n.is_f64() || text.contains('.') || text.contains('e') || text.contains('E') {
+        return Err(CanonError::NonIntegerNumber {
+            value: text,
             path: path.to_string(),
-        })
+        });
     }
+    out.push_str(&text);
+    Ok(())
 }
 
 fn write_string(s: &str, out: &mut String) {
@@ -231,6 +239,76 @@ mod tests {
         assert_eq!(canonical_json(&json!(0)).unwrap(), "0");
         assert_eq!(canonical_json(&json!(-7)).unwrap(), "-7");
         assert_eq!(canonical_json(&json!(1_000_000)).unwrap(), "1000000");
+    }
+
+    /// **Finding V6** (fixed): integers outside i64/u64 range, and `-0`, are
+    /// canonical — matching the spec (§5.1 places no range bound on
+    /// integers) and the independent Python peer (arbitrary-precision `int`,
+    /// no negative zero). Before this fix `write_number` refused all three
+    /// with `NonIntegerNumber`, a canonical-form disagreement with both.
+    #[test]
+    fn v6_integers_beyond_i64_u64_and_negative_zero_are_canonical() {
+        // u64::MAX + 1 — one past the old unsigned ceiling.
+        assert_eq!(
+            canonical_json(&serde_json::from_str("18446744073709551616").unwrap()).unwrap(),
+            "18446744073709551616"
+        );
+        // i64::MIN - 1 — one past the old signed floor.
+        assert_eq!(
+            canonical_json(&serde_json::from_str("-9223372036854775809").unwrap()).unwrap(),
+            "-9223372036854775809"
+        );
+        // A much larger integer, to confirm this isn't a one-past-the-edge patch.
+        assert_eq!(
+            canonical_json(&serde_json::from_str("123456789012345678901234567890").unwrap())
+                .unwrap(),
+            "123456789012345678901234567890"
+        );
+        // -0 collapses to plain 0, like Python's `int`.
+        assert_eq!(
+            canonical_json(&serde_json::from_str("-0").unwrap()).unwrap(),
+            "0"
+        );
+        // The same digest now succeeds inside a contract-shaped object, where
+        // the audit proof previously observed `ContractError::NotCanonical`.
+        digest_of(&json!({"budget_bytes": serde_json::from_str::<Value>("18446744073709551616").unwrap()}))
+            .expect("V6: huge integers are canonicalizable, not a digest error");
+    }
+
+    /// **Finding V6** cross-check: an independent implementation (Python
+    /// stdlib `hashlib` + `json`, the same peer used by `tests/interop`)
+    /// agrees byte-for-byte with this crate's canonical digest for an
+    /// integer outside i64/u64 range. Skips quietly if `python3` is not on
+    /// PATH rather than failing CI on an environment gap.
+    #[test]
+    fn v6_digest_matches_the_independent_python_peer_for_a_huge_integer() {
+        let value = json!({"budget_bytes": serde_json::from_str::<Value>("18446744073709551616").unwrap()});
+        let rust_digest = digest_of(&value).unwrap();
+        let script = r#"
+import importlib.util, json, sys
+spec = importlib.util.spec_from_file_location("peer", "tests/interop/peer.py")
+peer = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(peer)
+print(peer.digest_of(json.loads(sys.argv[1])))
+"#;
+        let output = std::process::Command::new("python3")
+            .arg("-c")
+            .arg(script)
+            .arg(value.to_string())
+            .output();
+        let output = match output {
+            Ok(o) => o,
+            Err(_) => {
+                eprintln!("V6 cross-check skipped: python3 not available");
+                return;
+            }
+        };
+        assert!(output.status.success(), "python3 canonical script failed: {output:?}");
+        let python_digest = String::from_utf8(output.stdout).unwrap().trim().to_string();
+        assert_eq!(
+            rust_digest, python_digest,
+            "V6: canonical digest for an out-of-i64/u64-range integer must match the independent peer"
+        );
     }
 
     #[test]

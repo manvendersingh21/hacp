@@ -30,30 +30,48 @@ use zeroize::Zeroizing;
 const LIMIT: u64 = 16 * 1024 * 1024;
 /// Default guardian request budget: operations per rolling 60-second window.
 pub const DEFAULT_RATE_PER_MINUTE: u32 = 600;
-/// Fixed-window per-minute request budget. One budget per guardian daemon spans
-/// every authorized connection; the cap counts rejected and unknown operations
-/// too, so error floods cannot bypass it. No state beyond (start, count).
-#[derive(Clone, Copy)]
+/// Exact rolling 60-second admission window (S3), bounded by the configured cap.
+/// One budget spans all authorized connections and all request kinds.
 struct RateBudget {
     cap: u32,
-    window: Option<(std::time::Instant, u32)>,
+    window: std::collections::VecDeque<std::time::Instant>,
+    /// S4: audit throttling is independent of admission recovery.
+    last_limited_log: Option<std::time::Instant>,
 }
 impl RateBudget {
     fn new(cap: u32) -> Self {
-        Self { cap, window: None }
+        Self {
+            cap,
+            window: std::collections::VecDeque::new(),
+            last_limited_log: None,
+        }
     }
     fn permit(&mut self) -> bool {
-        let now = std::time::Instant::now();
-        if let Some((start, count)) = self.window {
-            if now.duration_since(start) < Duration::from_secs(60) {
-                if count >= self.cap {
-                    return false;
-                }
-                self.window = Some((start, count + 1));
-                return true;
+        self.permit_at(std::time::Instant::now())
+    }
+    fn permit_at(&mut self, now: std::time::Instant) -> bool {
+        while let Some(&oldest) = self.window.front() {
+            if now.duration_since(oldest) >= Duration::from_secs(60) {
+                self.window.pop_front();
+            } else {
+                break;
             }
         }
-        self.window = Some((now, 1));
+        if self.window.len() as u32 >= self.cap {
+            return false;
+        }
+        self.window.push_back(now);
+        true
+    }
+    /// At most one RateLimited audit record in any 60-second interval.
+    fn should_log_rate_limit(&mut self) -> bool {
+        self.should_log_rate_limit_at(std::time::Instant::now())
+    }
+    fn should_log_rate_limit_at(&mut self, now: std::time::Instant) -> bool {
+        if self.last_limited_log.is_some_and(|last| now.duration_since(last) < Duration::from_secs(60)) {
+            return false;
+        }
+        self.last_limited_log = Some(now);
         true
     }
 }
@@ -272,7 +290,12 @@ impl Guardian {
         // or unknown-op floods consume the same budget as valid work.
         if !self.rate.permit() {
             let e = SecureError::RateLimited;
-            self.audit(e, None);
+            // S4: log at most once per throttled streak, not once per
+            // rejected request — otherwise a sustained flood under a small
+            // cap grows audit.jsonl without bound.
+            if self.rate.should_log_rate_limit() {
+                self.audit(e, None);
+            }
             return json!({"ok":false,"error":e,"detail":e.to_string()});
         }
         match self.dispatch(bytes) {
@@ -1025,6 +1048,34 @@ mod tests {
         }
     }
     #[test]
+    fn s3_rolling_window_prevents_boundary_double_burst() {
+        let mut rate = RateBudget::new(3);
+        let start = std::time::Instant::now();
+        assert!(rate.permit_at(start));
+        let late = start + Duration::from_millis(59_700);
+        assert!(rate.permit_at(late));
+        assert!(rate.permit_at(late));
+        let boundary = start + Duration::from_millis(60_100);
+        assert!(rate.permit_at(boundary));
+        assert!(!rate.permit_at(boundary));
+        assert!(!rate.permit_at(boundary));
+    }
+    #[test]
+    fn s4_audit_once_per_window_even_after_admission_recovers() {
+        let fixture = Fixture::new();
+        let mut g = fixture.guardian();
+        g.set_rate_per_minute(1).unwrap();
+        for _ in 0..5000 { g.handle_bytes(b"x"); }
+        let audit = fs::read_to_string(fixture.store.join("audit.jsonl")).unwrap();
+        assert_eq!(audit.lines().filter(|line| line.contains("RateLimited")).count(), 1);
+        let mut rate = RateBudget::new(1);
+        let now = std::time::Instant::now();
+        assert!(rate.should_log_rate_limit_at(now));
+        assert!(rate.permit_at(now));
+        assert!(!rate.should_log_rate_limit_at(now + Duration::from_secs(59)));
+        assert!(rate.should_log_rate_limit_at(now + Duration::from_secs(60)));
+    }
+    #[test]
     fn rate_limit_caps_all_operations_and_recovers_next_window() {
         let fixture = Fixture::new();
         let mut g = fixture.guardian();
@@ -1041,11 +1092,11 @@ mod tests {
         assert_eq!(limited["detail"], "RateLimited");
         // Fixed shape only: no request echo, no counters, no budget details.
         assert_eq!(limited.as_object().unwrap().len(), 3);
-        // A rolled-over window admits traffic again.
+        // Requests that have aged out of the trailing 60s admit traffic again.
         let past = std::time::Instant::now()
             .checked_sub(Duration::from_secs(61))
             .expect("monotonic clock with >61s uptime");
-        g.rate.window = Some((past, 2));
+        g.rate.window = std::collections::VecDeque::from([past, past]);
         assert_eq!(g.handle_bytes(probe.as_bytes())["ok"], true);
     }
     #[test]

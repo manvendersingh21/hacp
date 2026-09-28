@@ -119,8 +119,11 @@ k_i2r = HKDF-SHA256(ikm, salt, ctx‖"k_i2r", 32)     # initiator→responder
 k_r2i = HKDF-SHA256(ikm, salt, ctx‖"k_r2i", 32)     # responder→initiator
 ```
 
-Mutual authentication (signatures cover both ephemerals, both nonces, URNs,
-and the session id — no swap or cross-session reuse without breaking one) and
+The hello signature covers the initiator ephemeral and nonce, both URNs, and
+the HACP session context. The ack signature covers both ephemerals, both nonces,
+both URNs, and the HACP session context; it does **not** cover the derived secure
+`sid`. The initiator MUST independently derive and compare that `sid` before
+accepting the ack. Together these checks provide mutual authentication and
 forward secrecy (ephemeral DH only). Replayed/flooded hellos are bounded:
 **at most 4 pending sessions per peer** (oldest evicted); an evicted hello
 fails at the first `msg` and must re-run. A guardian MUST answer an
@@ -543,3 +546,10 @@ the §8 pipeline order.
 3. No revocation or post-compromise security; re-provision both stores.
 4. Gap tolerance bounded at 64; deletion aborts loudly; no rekey.
 5. Contract holds defer delivery; contradictions always abort.
+
+The request budget MUST count admitted requests in the trailing 60 seconds,
+expiring each admission independently (S3). Rejected over-budget requests MUST
+produce at most one `RateLimited` audit record per 60-second interval, even if
+admission temporarily recovers (S4). Secure-envelope `ct` MUST contain an even
+number of lowercase hex digits (at least 32); advisory `ts` MUST be RFC 3339
+with a `T` or `t` separator, never a space (S5).

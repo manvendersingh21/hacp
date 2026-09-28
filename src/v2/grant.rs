@@ -122,10 +122,25 @@ impl CapabilityGrant {
         Ok(g)
     }
 
+    /// The literal chartering authority (§8.2, finding V8): the deployment
+    /// itself, not an agent, when it charters the root of a grant chain
+    /// directly rather than through an operator's agent URN.
+    pub const DEPLOYMENT_CHARTERER: &'static str = "deployment";
+
     fn check_shape(&self) -> Result<(), GrantError> {
         hex_id("g-", &self.grant_id)?;
-        super::envelope::agent_urn::parse(&self.grantor)
-            .map_err(|_| GrantError::BadUrn(self.grantor.clone()))?;
+        // V8: the deployment itself may charter directly — grantor ==
+        // "deployment" and no parent grant — without being an agent URN.
+        // Every other grantor, including every non-root grant in a chain,
+        // must still be a real agent URN. Before this fix, `check_shape`
+        // required every grantor to parse as an agent URN, so the exact
+        // charterer this type's own doc comment names as valid ("deployment")
+        // was rejected by the code that was supposed to accept it.
+        let is_deployment_charter = self.parent.is_none() && self.grantor == Self::DEPLOYMENT_CHARTERER;
+        if !is_deployment_charter {
+            super::envelope::agent_urn::parse(&self.grantor)
+                .map_err(|_| GrantError::BadUrn(self.grantor.clone()))?;
+        }
         super::envelope::agent_urn::parse(&self.grantee)
             .map_err(|_| GrantError::BadUrn(self.grantee.clone()))?;
         if let Some(peer) = &self.peer {
@@ -651,6 +666,32 @@ mod tests {
             )
             .unwrap();
         assert!(ledger.covers(&urn("boss"), "work/all", "2026-10-01T00:00:00Z"));
+    }
+
+    /// **Finding V8** (fixed, item 1 of 4): the literal charterer
+    /// `"deployment"` — the exact string this type's own doc comment names as
+    /// a valid grantor — must be accepted by `charter()`/`check_shape`, not
+    /// rejected as a malformed agent URN. Only valid for a root charter (no
+    /// parent grant); an operator URN remains the alternative.
+    #[test]
+    fn v8_deployment_is_a_valid_charterer() {
+        let g = CapabilityGrant::charter(
+            "g-000000000001",
+            CapabilityGrant::DEPLOYMENT_CHARTERER,
+            &urn("a"),
+            vec![],
+            T0,
+            T1,
+        )
+        .expect("V8: \"deployment\" must be accepted as the chartering authority");
+        assert_eq!(g.grantor, "deployment");
+        let mut ledger = GrantLedger::default();
+        ledger.issue(g, T0).unwrap();
+        // A non-"deployment", non-URN grantor is still rejected.
+        assert!(matches!(
+            CapabilityGrant::charter("g-000000000002", "not-a-urn", &urn("a"), vec![], T0, T1),
+            Err(GrantError::BadUrn(_))
+        ));
     }
 
     #[test]

@@ -140,23 +140,36 @@ def validate_envelope(env):
 
 def check_against_schema(env, schema):
     """Minimal draft-07 consumer: required keys and primitive types. Proves
-    the committed schema files are usable standalone; not a full validator."""
+    the committed schema files are usable standalone; not a full validator.
+
+    `type` is a single string for most properties, but a nullable field like
+    `in_reply_to` declares it as a list (`["string", "null"]`, JSON Schema's
+    ordinary way to say "string or null"). Related to finding V8 (item 3):
+    the reference now round-trips `in_reply_to: null` explicitly instead of
+    omitting the field, so this validator sees a list-typed `type` for the
+    first time on real traffic — and a naive `dict.get(want, ...)` raises
+    `TypeError: unhashable type: 'list'` the moment it does. Accept any type
+    named in the list.
+    """
     required = schema.get("required", [])
     for key in required:
         if key not in env:
             raise ProtocolError(f"schema: missing required {key!r}")
     props = schema.get("properties", {})
+    predicates = {
+        "string": lambda v: isinstance(v, str),
+        "integer": lambda v: isinstance(v, int) and not isinstance(v, bool),
+        "object": lambda v: isinstance(v, dict),
+        "array": lambda v: isinstance(v, list),
+        "null": lambda v: v is None,
+    }
     for key, declared in props.items():
         if key not in env:
             continue
         want = declared.get("type")
+        wanted_types = want if isinstance(want, list) else [want]
         got = env[key]
-        ok = {
-            "string": lambda v: isinstance(v, str),
-            "integer": lambda v: isinstance(v, int) and not isinstance(v, bool),
-            "object": lambda v: isinstance(v, dict),
-            "array": lambda v: isinstance(v, list),
-        }.get(want, lambda v: True)(got)
+        ok = any(predicates.get(t, lambda v: True)(got) for t in wanted_types)
         if not ok:
             raise ProtocolError(f"schema: {key!r} should be {want}")
 
@@ -206,6 +219,13 @@ class Peer:
             "to": self.peer_urn,
             "kind": kind,
             "timestamp": now(),
+            # Finding V8 (item 3): the reference now always serializes
+            # `in_reply_to`, explicit `null` included, rather than omitting
+            # it when absent — an omitted field and an explicit null are
+            # different wire facts (schema type `["string","null"]`). This
+            # peer matches that shape so both sides' transcripts agree
+            # frame-for-frame.
+            "in_reply_to": None,
             "body": body,
         }
         validate_envelope(env)

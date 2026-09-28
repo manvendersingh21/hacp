@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Fix V5: accept the last allowed amendment; refuse further proposals while preserving execution and the frozen revision.
+- Fix V6: specify arbitrary-precision canonical integers and normalize `-0` to `0`, matching the independent Python peer.
+- Fix V8: accept deployment charterers and profile capability slashes, preserve explicit null replies, and align verdict prose with `accept`/`reject` wire values.
+- Fix S3: enforce the documented rolling 60-second guardian budget with independently expiring admissions.
+- Fix S4: emit at most one rate-limit audit record per 60 seconds, including across temporary admission recovery.
+- Fix S5: require even-length ciphertext hex in the schema and reject space-separated secure timestamps.
+- Fix S6: document the ack signature's HACP context binding and separate derived secure session ID check.
+
 - Fix V1: constrain preauthorized collaboration peers to the grantor's authority at issuance and admission; recursive-pairwise preauthorization additionally binds and enforces one named sibling peer. This adds `CapabilityGrant::peer` and makes the public `CollaborationPermit::by_preauthorization` and `HiveProfile::authorize_siblings` signatures breaking API changes.
 - Fix V2: reject consecutive counters by one participant and preserve the current executing revision when a unilateral amendment exhausts its rounds or deadline.
 - Fix HACP Secure S1 hello amplification/livelock by answering each

@@ -182,7 +182,15 @@ pub struct Envelope {
     /// Canonical timestamp: `YYYY-MM-DDTHH:MM:SSZ` (§5.1).
     pub timestamp: String,
     /// The message being answered, when this message is an answer.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    ///
+    /// Finding V8 (item 3 of 4): always serialized, even as explicit `null`.
+    /// The schema (`spec/schemas/envelope.json`) types this field
+    /// `["string","null"]`, so an envelope received with `"in_reply_to":
+    /// null` distinguishes "explicitly not a reply" from "field absent" —
+    /// the wire actually carries that null. Skipping the field on
+    /// serialization when `None` (the pre-fix behaviour) collapsed both
+    /// cases into "absent", so a received envelope with an explicit null
+    /// did not round-trip byte-for-byte.
     pub in_reply_to: Option<String>,
     /// Kind-specific body; must be canonicalizable (integers only, §5.1).
     #[schemars(with = "std::collections::BTreeMap<String, Value>")]
@@ -383,9 +391,43 @@ mod tests {
             Some(&json!({"future": [1, 2]}))
         );
         let reserialized = serde_json::to_value(&envelope).unwrap();
+        // V8 (item 3): `in_reply_to` is a *known* field, always present on
+        // re-serialization (explicit `null` when absent/not a reply) — unlike
+        // `shimmer`, which round-trips through `extra` because this build
+        // does not know it. `raw` omitted `in_reply_to`; the reserialized
+        // form makes it explicit.
+        let mut expected = raw;
+        expected["in_reply_to"] = Value::Null;
         assert_eq!(
-            reserialized, raw,
-            "re-serialization must not lose the future"
+            reserialized, expected,
+            "re-serialization must not lose the future, and must make in_reply_to explicit (V8)"
+        );
+    }
+
+    /// **Finding V8** (fixed, item 3 of 4): an envelope received with an
+    /// explicit `"in_reply_to": null` must re-serialize with that field
+    /// still present as `null`, not silently dropped. The schema types the
+    /// field `["string","null"]` precisely because absent and
+    /// explicit-null are distinct wire facts.
+    #[test]
+    fn v8_in_reply_to_null_round_trips_explicitly() {
+        let raw = json!({
+            "protocol": PROTOCOL,
+            "message_id": "m-000000000000",
+            "session_id": "s",
+            "from": agent_urn::mint("a").unwrap(),
+            "to": agent_urn::mint("b").unwrap(),
+            "kind": kinds::HEARTBEAT,
+            "timestamp": "2026-09-04T12:00:00Z",
+            "in_reply_to": null,
+            "body": {}
+        });
+        let envelope: Envelope = serde_json::from_value(raw.clone()).unwrap();
+        envelope.validate().unwrap();
+        assert_eq!(
+            serde_json::to_value(&envelope).unwrap(),
+            raw,
+            "V8: an explicit null in_reply_to must round-trip, not be dropped"
         );
     }
 

@@ -55,7 +55,7 @@
     },
     "ct": {
       "type": "string",
-      "pattern": "^[0-9a-f]{32,}$",
+      "pattern": "^(?:[0-9a-f]{2}){16,}$",
       "description": "ChaCha20-Poly1305 ciphertext concatenated with the 16-byte Poly1305 tag, lowercase hex. Minimum length covers the tag for empty plaintext. Present on msg."
     },
     "ts": {

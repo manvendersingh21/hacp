@@ -545,7 +545,7 @@ mod tests {
         assert_eq!(tb.status(&sid).recv_high, Some(0));
     }
     #[test]
-    fn handshake_tampering_context_pins_and_derived_sid() {
+    fn s6_handshake_tampering_context_pins_and_derived_sid() {
         let mut a = SessionManager::new("urn:hacp:agent:a").unwrap();
         let mut b = SessionManager::new("urn:hacp:agent:b").unwrap();
         let hello = a
@@ -561,6 +561,10 @@ mod tests {
         ));
         assert!(b.sessions().is_empty());
         let ack = b.respond("s-test", &hello, &a.public_key()).unwrap();
+        let mut changed_sid = ack.clone();
+        changed_sid.sid = Some("03".repeat(16));
+        assert_eq!(ack.ack_signing_input("s-test", &hello).unwrap(),
+                   changed_sid.ack_signing_input("s-test", &hello).unwrap());
         for field in ["epub", "nonce", "sid"] {
             let mut bad = ack.clone();
             match field {

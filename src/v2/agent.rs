@@ -37,7 +37,11 @@ pub struct Agent {
     /// `urn:hacp:agent:<local-name>` (§3).
     pub id: String,
     /// Declared feature identifiers (§6.3) and free-form descriptors. A
-    /// capability token is `[a-z0-9-]{1,32}`; anything a deployment invents
+    /// capability token is `[a-z0-9-]{1,32}`, optionally with one `/<suffix>`
+    /// version separator (finding V8: a profile identifier like
+    /// [`HIVE_PROFILE`](super::HIVE_PROFILE) = `hive-recursive-pairwise/1`
+    /// must itself be advertisable as a capability — before this fix the `/`
+    /// made `validate_capability` refuse it). Anything a deployment invents
     /// beyond [`features::ALL`] negotiates as an unknown feature, which peers
     /// accept and cannot rely on.
     pub capabilities: BTreeSet<String>,
@@ -47,7 +51,7 @@ pub struct Agent {
 pub enum AgentError {
     #[error("agent id: {0}")]
     BadId(String),
-    #[error("capability {found:?} must be 1-32 chars of [a-z0-9-]")]
+    #[error("capability {found:?} must be 1-32 chars of [a-z0-9-], with at most one non-leading, non-trailing '/' version separator")]
     BadCapability { found: String },
 }
 
@@ -80,12 +84,21 @@ impl Agent {
     }
 }
 
+/// **Finding V8** (fixed, item 2 of 4): `[a-z0-9-]{1,32}`, plus at most one
+/// `/` separator that is neither the first nor the last character — the
+/// shape a named, versioned profile identifier needs (e.g.
+/// `hive-recursive-pairwise/1`, this crate's own [`HIVE_PROFILE`
+/// constant](super::HIVE_PROFILE)). Before this fix `/` was rejected
+/// outright, so the profile this crate ships could never be advertised as an
+/// `Agent` capability.
 fn validate_capability(c: &str) -> Result<(), AgentError> {
     let len = c.len();
-    if !(1..=32).contains(&len)
-        || !c.chars()
-            .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '-')
-    {
+    let chars_ok = c
+        .chars()
+        .all(|ch| ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '-' || ch == '/');
+    let slash_count = c.matches('/').count();
+    let slash_placed_ok = !c.starts_with('/') && !c.ends_with('/');
+    if !(1..=32).contains(&len) || !chars_ok || slash_count > 1 || !slash_placed_ok {
         return Err(AgentError::BadCapability {
             found: c.to_string(),
         });
@@ -114,5 +127,27 @@ mod tests {
     #[test]
     fn the_feature_vocabulary_stays_small() {
         assert_eq!(features::ALL.len(), 5);
+    }
+
+    /// **Finding V8** (fixed, item 2 of 4): the crate's own named profile
+    /// identifier — `hive-recursive-pairwise/1`, [`super::super::HIVE_PROFILE`]
+    /// — must be advertisable as an `Agent` capability. Before this fix the
+    /// `/` version separator made `validate_capability` refuse it outright.
+    #[test]
+    fn v8_the_hive_profile_identifier_is_a_valid_capability() {
+        let agent = Agent::with_capabilities(
+            "urn:hacp:agent:a-1",
+            &[super::super::HIVE_PROFILE, "supervision"],
+        )
+        .expect("V8: hive-recursive-pairwise/1 must be a valid capability");
+        assert!(agent.declares(super::super::HIVE_PROFILE));
+        // Malformed slash placement is still rejected: no leading/trailing
+        // slash, and at most one separator.
+        for bad in ["/leading", "trailing/", "two/slashes/here"] {
+            assert!(
+                Agent::with_capabilities("urn:hacp:agent:a-1", &[bad]).is_err(),
+                "expected {bad:?} to be rejected"
+            );
+        }
     }
 }
